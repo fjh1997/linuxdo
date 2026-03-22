@@ -1,0 +1,36 @@
+name = "linuxdo-accelerator-ui"
+product-name = "Linux.do Accelerator"
+identifier = "io.linuxdo.accelerator"
+version = "0.1.0"
+out-dir = "./dist"
+formats = ["deb", "dmg", "nsis"]
+before-packaging-command = "cargo build --release --bins"
+authors = ["fjh1997 <549308442@qq.com>"]
+publisher = "linux.do"
+description = "Native Rust linux.do accelerator desktop app"
+long-description = """
+A native Rust desktop shell for the linux.do accelerator.
+It includes a clickable GUI for start/stop/minimize and a CLI binary for scripting.
+"""
+category = "DeveloperTool"
+icons = ["assets/icons/*.png"]
+
+[[binaries]]
+path = "linuxdo-accelerator-ui"
+main = true
+
+[[binaries]]
+path = "linuxdo-accelerator"
+main = false
+
+[linux]
+generate-desktop-entry = true
+
+[deb]
+section = "utils"
+package-name = "linuxdo-accelerator"
+desktop-template = "packaging/linux/linuxdo-accelerator.desktop.hbs"
+
+[nsis]
+installer-mode = "perMachine"
+installer-icon = "assets/icons/linuxdo.ico"

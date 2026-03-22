@@ -1,0 +1,29 @@
+[package]
+name = "linuxdo-accelerator"
+version = "0.1.0"
+edition = "2024"
+authors = ["fjh1997 <549308442@qq.com>"]
+license = "MIT"
+description = "Native Rust linux.do accelerator with CLI and desktop shell"
+
+[dependencies]
+anyhow = "1"
+bytes = "1"
+clap = { version = "4", features = ["derive"] }
+directories = "6"
+eframe = { version = "0.31", default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["server", "tokio"] }
+libc = "0.2"
+rcgen = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["http2", "rustls-tls"] }
+rustls = { version = "0.23", features = ["ring"] }
+rustls-pemfile = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-rustls = "0.26"
+toml = "0.8"
+time = { version = "0.3", default-features = false, features = ["std"] }

@@ -1,0 +1,88 @@
+name: Build Release Packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: linux
+            package_cmd: cargo packager -f deb -c Packager.toml
+          - os: windows-latest
+            artifact_name: windows
+            package_cmd: cargo packager -f nsis -c Packager.toml
+          - os: macos-latest
+            artifact_name: macos
+            package_cmd: cargo packager -f dmg -c Packager.toml
+
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.artifact_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libxkbcommon-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libssl-dev \
+            pkg-config
+
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked
+
+      - name: Build binaries
+        run: cargo build --release --bins
+
+      - name: Package app
+        run: ${{ matrix.package_cmd }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linuxdo-accelerator-${{ matrix.artifact_name }}
+          path: |
+            dist/**
+            target/release/linuxdo-accelerator*
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    name: Publish GitHub Release
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: linuxdo-accelerator-*
+          path: release-artifacts
+          merge-multiple: false
+
+      - name: List release files
+        run: find release-artifacts -type f | sort
+
+      - name: Upload assets to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/**/dist/**
+          generate_release_notes: true

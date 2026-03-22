@@ -1,0 +1,5 @@
+target/
+data/
+dist/
+linuxdo-accelerator.toml
+tools/
