@@ -1,50 +1,68 @@
-# linuxdo-accelerator
+# Linux.do Accelerator
 
-一个原生 Rust 的 `linux.do` 专属加速器，同时提供：
+<div align="center">
+  <img src="./assets/icons/128x128.png" alt="Linux.do Accelerator" width="88" />
+  <h1>Linux.do Accelerator</h1>
+  <p>一个原生 Rust 的 <code>linux.do</code> 专属加速器，提供 <b>CLI + 桌面 GUI</b> 双形态。</p>
 
-- 单一二进制：同一个 `linuxdo-accelerator` 同时支持 `CLI` 和桌面 `GUI`
-- `CLI`：适合脚本和终端操作
-- 桌面壳：双击启动 GUI，点击“加速/停止”，支持最小化
+  <p>
+    <img alt="Rust" src="https://img.shields.io/badge/Rust-Native-orange?style=flat-square" />
+    <img alt="Platforms" src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-1f6feb?style=flat-square" />
+    <img alt="Package" src="https://img.shields.io/badge/Package-EXE%20%7C%20DEB%20%7C%20DMG-2da44e?style=flat-square" />
+    <img alt="Mode" src="https://img.shields.io/badge/Mode-CLI%20%2B%20Desktop-6f42c1?style=flat-square" />
+  </p>
+</div>
+
+<p align="center">
+  <img src="./docs/images/gui-preview.svg" alt="Linux.do Accelerator GUI Preview" width="960" />
+</p>
+
+## Overview
+
+`linuxdo-accelerator` 的目标很直接：
+
 - 一键生成并安装本地根证书
-- 一键写入 `hosts`
+- 一键写入和清理 `hosts`
 - 本地监听 `80/443`
-- 将 `linux.do` / `www.linux.do` 反向代理回真实站点
+- 为 `linux.do` 及其子域提供本地接管和转发
+- 同时支持脚本场景下的 `CLI`，以及普通用户可双击使用的桌面 GUI
 
-适合直接作为 GitHub 首页说明的摘要：
+## Highlights
 
-- 原生 Rust 开发，不依赖 Node 运行时
-- Windows / Linux / macOS 三端统一交付
-- 单程序同时支持双击启动和命令行调用
-- 配置集中在一个 `linuxdo-accelerator.toml` 文件
-- 支持一键安装证书、接管域名、DoH 和本地监听
+- 原生 Rust 实现，不依赖 Node 运行时
+- GUI 与后台代理逻辑分离，窗口关闭或最小化后后台仍可继续工作
+- 支持系统提权，适合证书安装、`hosts` 写入和低端口监听
+- 配置项集中在单个 `linuxdo-accelerator.toml`
+- 三端统一思路：
+  - Windows：双击打开 `.exe`
+  - Linux：安装 `.deb` 后桌面启动
+  - macOS：拖入 `Applications` 后直接打开
 
-## 二进制结构
+## GUI
 
-- `linuxdo-accelerator`
-  - 单一二进制，同时支持 CLI 和原生桌面 GUI
-  - 无参数时打开 GUI
-  - 传入子命令时按 CLI 模式运行
-  - Windows 双击打开弹窗
-  - Linux 安装后可从桌面入口打开
-  - macOS 可打包为 `.dmg`
+桌面端默认提供：
 
-## GUI 行为
+- `开始加速 / 停止加速`
+- 一键最小化
+- 错误详情展示
+- 当前上游、DoH、证书和域名接管范围预览
+- 配置和关于面板
 
-- 双击打开桌面窗口
-- 点击“加速”时，如果当前没有管理员权限，会触发系统提权确认
-- 启动后按钮会切换成“停止”
-- 加速启动后可直接点击“最小化”
-- GUI 本身不承载代理逻辑，真正的监听服务会由后台守护进程运行
+平台行为：
 
-## CLI 使用
+- Windows：支持托盘最小化与恢复
+- Linux：Wayland / GNOME 下使用托盘代理恢复窗口
+- macOS：支持最小化到 Dock，已接入菜单栏图标恢复链路
 
-初始化配置：
+## Quick Start
+
+初始化默认配置：
 
 ```bash
 cargo run --bin linuxdo-accelerator -- init-config
 ```
 
-准备证书和 hosts：
+准备证书和 `hosts`：
 
 ```bash
 sudo cargo run --bin linuxdo-accelerator -- setup
@@ -62,73 +80,37 @@ sudo cargo run --bin linuxdo-accelerator -- start
 sudo cargo run --bin linuxdo-accelerator -- stop
 ```
 
-查看状态：
+查看当前状态：
 
 ```bash
 cargo run --bin linuxdo-accelerator -- status
 ```
 
-## GUI 开发运行
+直接打开 GUI：
 
 ```bash
 cargo run --bin linuxdo-accelerator
 ```
 
-## 打包
+## Configuration Paths
 
-项目提供了 `cargo-packager` 配置文件 [Packager.toml](/home/catcatyu/桌面/linuxdo/Packager.toml)：
+默认情况下，程序只使用一个主配置文件 `linuxdo-accelerator.toml`。
 
-- Windows 目标格式：`NSIS .exe`
-- Linux 目标格式：`.deb`
-- macOS 目标格式：`.dmg`
+| 平台 | 主配置文件 | 运行状态目录 | 证书目录 |
+| --- | --- | --- | --- |
+| Linux | `~/.config/linuxdo-accelerator/linuxdo-accelerator.toml` | `~/.local/share/linuxdo-accelerator/runtime` | `~/.local/share/linuxdo-accelerator/certs` |
+| Windows | `%APPDATA%\linuxdo\linuxdo-accelerator\config\linuxdo-accelerator.toml` | `%LOCALAPPDATA%\linuxdo\linuxdo-accelerator\data\runtime` | `%LOCALAPPDATA%\linuxdo\linuxdo-accelerator\data\certs` |
+| macOS | `~/Library/Application Support/io.linuxdo.linuxdo-accelerator/linuxdo-accelerator.toml` | `~/Library/Application Support/io.linuxdo.linuxdo-accelerator/runtime` | `~/Library/Application Support/io.linuxdo.linuxdo-accelerator/certs` |
 
-本地手动打包：
-
-```bash
-cargo install cargo-packager --locked
-cargo packager --release -c Packager.toml
-```
-
-只打 Linux `deb`：
+如果显式指定：
 
 ```bash
-cargo packager -f deb --release -c Packager.toml
+linuxdo-accelerator --config /path/to/linuxdo-accelerator.toml
 ```
 
-当前本机已经验证可以产出：
+程序会改用该配置文件；对应的 `runtime` 和 `certs` 目录也会优先跟着这个配置目录走。
 
-```text
-dist/linuxdo-accelerator_0.1.0_amd64.deb
-```
-
-macOS 不再走本地交叉编译脚本，改为使用 GitHub Actions 工作流 [.github/workflows/build-release.yml](/home/catcatyu/桌面/linuxdo/.github/workflows/build-release.yml) 在 `macos-latest` runner 上原生构建 `.dmg`。
-
-工作流会分别在三端原生 runner 上打包：
-
-- Linux：生成 `.deb`
-- Windows：生成 `NSIS .exe`
-- macOS：生成 `.dmg`
-
-## 配置文件
-
-默认情况下，程序只使用一个主配置文件 `linuxdo-accelerator.toml`。三端默认位置如下：
-
-- Linux
-  - 配置文件：`~/.config/linuxdo-accelerator/linuxdo-accelerator.toml`
-  - 运行状态目录：`~/.local/share/linuxdo-accelerator/runtime`
-  - 证书目录：`~/.local/share/linuxdo-accelerator/certs`
-- Windows
-  - 配置文件：`%APPDATA%\linuxdo\linuxdo-accelerator\config\linuxdo-accelerator.toml`
-  - 运行状态目录：`%LOCALAPPDATA%\linuxdo\linuxdo-accelerator\data\runtime`
-  - 证书目录：`%LOCALAPPDATA%\linuxdo\linuxdo-accelerator\data\certs`
-- macOS
-  - 配置文件：`~/Library/Application Support/io.linuxdo.linuxdo-accelerator/linuxdo-accelerator.toml`
-  - 运行状态目录：`~/Library/Application Support/io.linuxdo.linuxdo-accelerator/runtime`
-  - 证书目录：`~/Library/Application Support/io.linuxdo.linuxdo-accelerator/certs`
-
-如果你启动时显式传了 `--config /path/to/linuxdo-accelerator.toml`，程序会改用你指定的那一份配置文件；对应的 `runtime` 和 `certs` 目录也会优先跟着这个配置目录走。
-
-配置文件内容类似：
+## Config Example
 
 ```toml
 listen_host = "127.0.0.1"
@@ -142,13 +124,78 @@ ca_common_name = "Linux.do Accelerator Root CA"
 server_common_name = "linux.do"
 ```
 
-## 当前边界
+当前项目把以下内容统一放在同一个配置文件中：
 
-- 当前仍是站点专属反向代理，不是系统全局代理
-- 当前只实现 `HTTP/HTTPS`
-- WebSocket 透传还未单独补齐
+- DoH 上游
+- 接管域名列表
+- 证书 SAN 域名列表
+- 监听地址和端口
 
-## 参考项目
+## Binaries
 
-- `dev-sidecar`: https://github.com/docmirror/dev-sidecar
-- `steamcommunity302`: 交互形态和本地接管思路参考
+项目包含两个可执行文件：
+
+- `linuxdo-accelerator`
+  - CLI 主入口
+  - 负责 `setup / start / stop / status` 等命令
+- `linuxdo-accelerator-ui`
+  - 桌面 GUI 入口
+  - Windows 下双击打开弹窗
+  - Linux 下可由 `.desktop` 启动
+  - macOS 下打包为 `.app / .dmg`
+
+## Packaging
+
+项目使用 [`cargo-packager`](https://github.com/crabnebula-dev/cargo-packager) 和 [`Packager.toml`](./Packager.toml)：
+
+- Windows：`NSIS .exe`
+- Linux：`.deb`
+- macOS：`.dmg`
+
+本地打包：
+
+```bash
+cargo install cargo-packager --locked
+cargo packager --release -c Packager.toml
+```
+
+只打 Linux `deb`：
+
+```bash
+cargo packager -f deb --release -c Packager.toml
+```
+
+## GitHub Actions
+
+macOS 不再走本地交叉编译脚本，而是通过 GitHub Actions 原生构建：
+
+- Linux runner：生成 `.deb`
+- Windows runner：生成 `NSIS .exe`
+- macOS runner：生成 `.dmg`
+
+相关工作流见：
+
+- [`.github/workflows/build-release.yml`](./.github/workflows/build-release.yml)
+
+## Current Scope
+
+当前定位仍然比较明确：
+
+- 站点专属本地接管，不是系统全局代理
+- 以 `HTTP / HTTPS` 为主
+- 侧重 `linux.do` 及其关联域名
+
+## Development Notes
+
+本项目已经完成并验证过的关键点：
+
+- Linux Wayland / GNOME 下的最小化和恢复
+- Windows 托盘恢复、图标打包和无黑框提权
+- macOS 本机编译与窗口最小化恢复链路
+- 证书、`hosts` 和运行状态文件统一管理
+
+## Inspirations
+
+- [docmirror/dev-sidecar](https://github.com/docmirror/dev-sidecar)
+- `steamcommunity302`
+- [groupultra/telegram-search](https://github.com/groupultra/telegram-search)
