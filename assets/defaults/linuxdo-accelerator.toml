@@ -1,0 +1,60 @@
+listen_host = "127.0.0.1"
+hosts_ip = "127.0.0.1"
+http_port = 80
+https_port = 443
+upstream = "https://linux.do"
+fake_sni = "www.cloudflare.com"
+
+doh_endpoints = [
+    "https://aaa.ddd.oaifree.com/query-dns",
+    "https://cloudflare-dns.com/dns-query",
+    "https://dns.google/resolve",
+]
+
+proxy_domains = [
+    "linux.do",
+    "2048.linux.do",
+    "ads.linux.do",
+    "autoconfig.linux.do",
+    "autodiscover.linux.do",
+    "cdk.linux.do",
+    "cdn.linux.do",
+    "cdn3.linux.do",
+    "check.linux.do",
+    "connect.linux.do",
+    "credit.linux.do",
+    "docker-gcr.linux.do",
+    "docker-ghcr.linux.do",
+    "docker-hub.linux.do",
+    "docker-ui.linux.do",
+    "go.linux.do",
+    "imap.linux.do",
+    "ios.linux.do",
+    "lottery.linux.do",
+    "mail.linux.do",
+    "mta-sts.linux.do",
+    "nav.linux.do",
+    "ping.linux.do",
+    "pop.linux.do",
+    "pop3.linux.do",
+    "pow.linux.do",
+    "rate.linux.do",
+    "s3.linux.do",
+    "smtp.linux.do",
+    "status.linux.do",
+    "test-bba.s3.linux.do",
+    "uptime.linux.do",
+    "webmail.linux.do",
+    "wiki.linux.do",
+    "www.linux.do",
+]
+
+certificate_domains = [
+    "linux.do",
+    "www.linux.do",
+    "*.linux.do",
+    "*.s3.linux.do",
+]
+
+ca_common_name = "Linux.do Accelerator Root CA"
+server_common_name = "linux.do"
