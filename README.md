@@ -14,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="./docs/images/gui-preview.svg" alt="Linux.do Accelerator GUI Preview" width="960" />
+  <img src="./docs/images/gui-preview.png" alt="Linux.do Accelerator GUI Preview" width="960" />
 </p>
 
 ## Overview
