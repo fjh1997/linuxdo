@@ -21,6 +21,10 @@
   <img src="./docs/images/gui-preview.png" alt="Linux.do Accelerator GUI Preview" width="480" />
 </p>
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=fjh1997%2FLinux.do-Accelerator&type=Date)](https://www.star-history.com/#fjh1997/Linux.do-Accelerator&Date)
+
 ## Overview
 
 `linuxdo-accelerator` 的目标很直接：
