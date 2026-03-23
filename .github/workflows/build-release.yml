@@ -42,6 +42,17 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Use crates.io in CI
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<'EOF'
+          [registries.crates-io]
+          protocol = "sparse"
+
+          [net]
+          git-fetch-with-cli = true
+          EOF
+
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -61,7 +72,7 @@ jobs:
         run: cargo install cargo-packager --locked
 
       - name: Build binary
-        run: cargo build --release --bin linuxdo-accelerator
+        run: cargo build --release --locked --bin linuxdo-accelerator
 
       - name: Package app
         run: ${{ matrix.package_cmd }}
