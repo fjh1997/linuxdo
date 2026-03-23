@@ -39,6 +39,7 @@ proxy_domains = [
     "pop3.linux.do",
     "pow.linux.do",
     "rate.linux.do",
+    "linuxdo-uploads.s3.linux.do",
     "s3.linux.do",
     "smtp.linux.do",
     "status.linux.do",

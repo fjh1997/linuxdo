@@ -162,15 +162,14 @@ server_common_name = "linux.do"
 
 ## Binaries
 
-项目包含两个可执行文件：
+项目当前只包含一个统一可执行文件：
 
 - `linuxdo-accelerator`
-  - CLI 主入口
-  - 负责 `setup / start / stop / status` 等命令
-- `linuxdo-accelerator-ui`
-  - 桌面 GUI 入口
-  - Windows 下双击打开弹窗
-  - Linux 下可由 `.desktop` 启动
+  - 默认直接打开桌面 GUI
+  - 传入命令参数后作为 CLI 使用
+  - 负责 `setup / start / stop / status / gui` 等命令
+  - Windows 下打包为可双击启动的 `.exe`
+  - Linux 下由 `.desktop` 启动
   - macOS 下打包为 `.app / .dmg`
 
 ## Packaging
