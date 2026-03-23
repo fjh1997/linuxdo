@@ -1,6 +1,6 @@
 [package]
 name = "linuxdo-accelerator"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2024"
 build = "build.rs"
 authors = ["fjh1997 <549308442@qq.com>"]

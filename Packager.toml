@@ -1,7 +1,7 @@
 name = "linuxdo-accelerator"
 product-name = "Linux.do Accelerator"
 identifier = "io.linuxdo.accelerator"
-version = "0.1.8"
+version = "0.1.11"
 out-dir = "./dist"
 binaries-dir = "./target/release"
 formats = ["deb", "dmg", "nsis"]
