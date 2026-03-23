@@ -825,7 +825,15 @@ fn execute_action(config_path: &Path, action: GuiAction) -> Result<String> {
         config_path.to_string_lossy().into_owned(),
         subcommand.to_string(),
     ];
-    run_elevated(&cli_binary, &args).with_context(|| "elevation or command execution failed")?;
+    if let Err(error) = run_elevated(&cli_binary, &args) {
+        if let Ok(status) = service::status(Some(config_path.to_path_buf()))
+            && let Some(last_error) = status.last_error
+        {
+            return Err(Error::msg(last_error))
+                .with_context(|| "elevation or command execution failed");
+        }
+        return Err(error).with_context(|| "elevation or command execution failed");
+    }
 
     let deadline = Instant::now() + Duration::from_secs(12);
     loop {

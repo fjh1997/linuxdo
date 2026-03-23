@@ -78,24 +78,24 @@ pub async fn run_foreground(config_path: Option<PathBuf>, with_setup: bool) -> R
 
 pub fn helper_start(config_path: Option<PathBuf>) -> Result<()> {
     let paths = resolve_paths(config_path)?;
-    let config = AppConfig::load_or_create(&paths.config_path)?;
-    ensure_elevated(&config, true)?;
-
-    let current = state::refresh(&paths)?;
-    if current.running {
-        return Ok(());
-    }
-
-    let bundle = ensure_bundle(&config, &paths.cert_dir)?;
-    #[cfg(not(target_os = "macos"))]
-    install_ca(&bundle.ca_cert_path, &config.ca_common_name)?;
-    #[cfg(target_os = "macos")]
-    let _ = bundle;
-    apply_hosts(&config)?;
-    state::mark_starting(&paths)?;
-
-    let cli_binary = current_cli_binary()?;
     let start_result = (|| -> Result<()> {
+        let config = AppConfig::load_or_create(&paths.config_path)?;
+        ensure_elevated(&config, true)?;
+
+        let current = state::refresh(&paths)?;
+        if current.running {
+            return Ok(());
+        }
+
+        let bundle = ensure_bundle(&config, &paths.cert_dir)?;
+        #[cfg(not(target_os = "macos"))]
+        install_ca(&bundle.ca_cert_path, &config.ca_common_name)?;
+        #[cfg(target_os = "macos")]
+        let _ = bundle;
+        apply_hosts(&config)?;
+        state::mark_starting(&paths)?;
+
+        let cli_binary = current_cli_binary()?;
         let args = vec![
             "--config".to_string(),
             paths.config_path.to_string_lossy().into_owned(),
@@ -116,14 +116,13 @@ pub fn helper_start(config_path: Option<PathBuf>) -> Result<()> {
         Ok(())
     })();
 
-    if let Err(error) = start_result {
+    if let Err(error) = &start_result {
         let _ = remove_hosts();
         let _ = state::clear_pid(&paths);
-        let _ = state::mark_error(&paths, &error.to_string());
-        return Err(error);
+        let _ = state::mark_error(&paths, &format!("{error:#}"));
     }
 
-    Ok(())
+    start_result
 }
 
 pub fn helper_stop(config_path: Option<PathBuf>) -> Result<()> {
