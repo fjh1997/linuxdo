@@ -13,9 +13,10 @@ use http::{HeaderMap, Method, Request, Response, StatusCode};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::client::conn::http1 as client_http1;
+use hyper::client::conn::http2 as client_http2;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper_util::rt::TokioIo;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use reqwest::Client;
 use rustls::SignatureScheme;
 use rustls::client::{EchConfig, EchMode};
@@ -392,6 +393,10 @@ async fn send_once(
     }
 
     let tls_stream = connect_tls(request_host, outer_sni, ech_config, addr).await?;
+    let negotiated_h2 = tls_stream.get_ref().1.alpn_protocol() == Some(b"h2");
+    if negotiated_h2 {
+        return send_over_io_http2(TokioIo::new(tls_stream), request).await;
+    }
     send_over_io(TokioIo::new(tls_stream), request).await
 }
 
@@ -410,8 +415,7 @@ fn build_upstream_request(
         builder = builder.header(name, value);
     }
     builder = builder
-        .header(HOST, request_host)
-        .header("x-linuxdo-accelerator", "1");
+        .header(HOST, request_host);
     builder
         .body(Full::new(body))
         .context("failed to build upstream request")
@@ -427,6 +431,26 @@ where
     let (mut sender, connection) = client_http1::handshake(io)
         .await
         .context("failed to initialize upstream HTTP/1.1 client")?;
+    tokio::spawn(async move {
+        let _ = connection.await;
+    });
+    sender
+        .send_request(request)
+        .await
+        .context("failed to contact upstream")
+}
+
+async fn send_over_io_http2<T>(
+    io: TokioIo<T>,
+    request: Request<Full<Bytes>>,
+) -> Result<Response<Incoming>>
+where
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let (mut sender, connection) = client_http2::Builder::new(TokioExecutor::new())
+        .handshake(io)
+        .await
+        .context("failed to initialize upstream HTTP/2 client")?;
     tokio::spawn(async move {
         let _ = connection.await;
     });
@@ -460,7 +484,7 @@ async fn connect_tls(
             .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
             .with_no_client_auth()
     };
-    tls_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
     let server_name = ServerName::try_from(outer_sni.unwrap_or(request_host).to_string())
         .context("failed to construct upstream SNI name")?;
