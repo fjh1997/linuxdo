@@ -77,6 +77,12 @@ impl AppPaths {
 }
 
 fn default_app_dirs() -> Result<(PathBuf, PathBuf)> {
+    #[cfg(target_os = "android")]
+    {
+        let root = PathBuf::from("/data/local/tmp/linuxdo-accelerator");
+        return Ok((root.join("config"), root.join("data")));
+    }
+
     #[cfg(target_os = "linux")]
     {
         if let Some(home) = effective_linux_home_dir() {

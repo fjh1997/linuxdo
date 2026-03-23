@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.LinuxdoAccelerator" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">#EF6A3A</item>
+        <item name="colorPrimaryVariant">#D65A2D</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="android:statusBarColor">#F5F2EC</item>
+        <item name="android:navigationBarColor">#F5F2EC</item>
+        <item name="android:windowBackground">#F5F2EC</item>
+    </style>
+</resources>

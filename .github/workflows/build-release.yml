@@ -86,9 +86,87 @@ jobs:
             dist/**
             target/release/linuxdo-accelerator*
 
+  build-android:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            rust_target: aarch64-linux-android
+            artifact_name: android-arm64-v8a
+            apk_name: linuxdo-accelerator-android-arm64-v8a.apk
+          - abi: x86_64
+            rust_target: x86_64-linux-android
+            artifact_name: android-x86_64
+            apk_name: linuxdo-accelerator-android-x86_64.apk
+
+    runs-on: ubuntu-latest
+    name: Build ${{ matrix.artifact_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Use crates.io in CI
+        shell: bash
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<'EOF'
+          [registries.crates-io]
+          protocol = "sparse"
+
+          [net]
+          git-fetch-with-cli = true
+          EOF
+
+      - name: Install Android SDK / NDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;27.2.12479018"
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Build Android APK
+        shell: bash
+        env:
+          ANDROID_ABI: ${{ matrix.abi }}
+          RUST_TARGET: ${{ matrix.rust_target }}
+          ANDROID_BUILD_TYPE: release
+          APK_OUTPUT_NAME: ${{ matrix.apk_name }}
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_SDK_ROOT}/ndk/27.2.12479018"
+          ./scripts/build-android-apk.sh
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linuxdo-accelerator-${{ matrix.artifact_name }}
+          path: |
+            android/dist/*.apk
+
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs:
+      - build
+      - build-android
     runs-on: ubuntu-latest
     name: Publish GitHub Release
 
@@ -108,4 +186,5 @@ jobs:
         with:
           files: |
             release-artifacts/**/dist/**
+            release-artifacts/**/*.apk
           generate_release_notes: true

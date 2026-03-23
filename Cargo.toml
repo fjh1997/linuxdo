@@ -1,6 +1,6 @@
 [package]
 name = "linuxdo-accelerator"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2024"
 build = "build.rs"
 authors = ["fjh1997 <549308442@qq.com>"]
@@ -12,7 +12,6 @@ anyhow = "1"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
 directories = "6"
-eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow", "wgpu", "x11", "wayland"] }
 http = "1"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["http1", "server"] }
@@ -20,7 +19,6 @@ hyper-util = { version = "0.1", features = ["server", "tokio"] }
 libc = "0.2"
 rcgen = "0.12"
 reqwest = { version = "0.12", default-features = false, features = ["http2", "rustls-tls"] }
-raw-window-handle = "0.6"
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
 serde = { version = "1", features = ["derive"] }
@@ -29,14 +27,18 @@ tokio = { version = "1", features = ["full"] }
 tokio-rustls = "0.26"
 toml = "0.8"
 time = { version = "0.3", default-features = false, features = ["std"] }
+x509-parser = "0.16"
+md5 = "0.7"
 
 [target.'cfg(any(windows, target_os = "linux", target_os = "macos"))'.dependencies]
+eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow", "wgpu", "x11", "wayland"] }
 tray-icon = "0.19"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 
 [target.'cfg(windows)'.dependencies]
+raw-window-handle = "0.6"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",

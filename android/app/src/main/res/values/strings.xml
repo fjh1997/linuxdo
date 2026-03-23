@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Linux.do Accelerator</string>
+    <string name="app_subtitle">Android DNS 接管壳，调用同一个 Rust 核心</string>
+    <string name="action_start">开始加速</string>
+    <string name="action_stop">停止加速</string>
+    <string name="status_label">当前状态</string>
+    <string name="config_label">配置文件</string>
+    <string name="detail_label">详情输出</string>
+    <string name="notification_title">Linux.do Accelerator</string>
+    <string name="notification_text_running">Android DNS 接管已启用</string>
+    <string name="notification_text_stopped">Android DNS 接管已停止</string>
+    <string name="tile_label">Linux.do 加速</string>
+    <string name="tile_subtitle_running">点击即可停止</string>
+    <string name="mode_hint">当前为非 Root 模式：主要接管 linux.do 相关 DNS，推荐用 Chrome 或 Edge 访问。若使用 Root 版并安装系统证书，系统浏览器和 WebView 的兼容性通常会更好。</string>
+</resources>

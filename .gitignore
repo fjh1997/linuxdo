@@ -3,3 +3,7 @@ data/
 dist/
 /linuxdo-accelerator.toml
 tools/
+release-downloads/
+android/.gradle/
+android/.kotlin/
+android/**/build/

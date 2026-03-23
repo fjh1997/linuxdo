@@ -9,8 +9,8 @@ use crate::config::AppConfig;
 use crate::hosts::{apply_hosts, remove_hosts};
 use crate::paths::AppPaths;
 use crate::platform::{
-    ensure_elevated, install_ca, is_process_running, spawn_detached, terminate_process,
-    uninstall_ca,
+    ensure_elevated, ensure_loopback_alias, install_ca, is_process_running, remove_loopback_alias,
+    spawn_detached, terminate_process, uninstall_ca,
 };
 use crate::proxy::run_proxy;
 use crate::state;
@@ -31,9 +31,10 @@ pub fn setup(config_path: Option<PathBuf>) -> Result<()> {
     let paths = resolve_paths(config_path)?;
     let config = AppConfig::load_or_create(&paths.config_path)?;
     ensure_elevated(&config, true)?;
+    ensure_loopback_alias(&config)?;
     let bundle = ensure_bundle(&config, &paths.cert_dir)?;
     install_ca(&bundle.ca_cert_path, &config.ca_common_name)?;
-    apply_hosts(&config)?;
+    apply_hosts(&config, &paths)?;
     state::mark_stopped(&paths, "系统加速环境已准备")?;
     Ok(())
 }
@@ -50,6 +51,7 @@ pub async fn run_foreground(config_path: Option<PathBuf>, with_setup: bool) -> R
     let paths = resolve_paths(config_path)?;
     let config = AppConfig::load_or_create(&paths.config_path)?;
     ensure_elevated(&config, with_setup)?;
+    ensure_loopback_alias(&config)?;
     let bundle = if with_setup {
         ensure_bundle(&config, &paths.cert_dir)?
     } else {
@@ -57,7 +59,7 @@ pub async fn run_foreground(config_path: Option<PathBuf>, with_setup: bool) -> R
     };
     if with_setup {
         install_ca(&bundle.ca_cert_path, &config.ca_common_name)?;
-        apply_hosts(&config)?;
+        apply_hosts(&config, &paths)?;
     }
 
     let pid = std::process::id();
@@ -81,6 +83,7 @@ pub fn helper_start(config_path: Option<PathBuf>) -> Result<()> {
     let start_result = (|| -> Result<()> {
         let config = AppConfig::load_or_create(&paths.config_path)?;
         ensure_elevated(&config, true)?;
+        ensure_loopback_alias(&config)?;
 
         let current = state::refresh(&paths)?;
         if current.running {
@@ -92,7 +95,7 @@ pub fn helper_start(config_path: Option<PathBuf>) -> Result<()> {
         install_ca(&bundle.ca_cert_path, &config.ca_common_name)?;
         #[cfg(target_os = "macos")]
         let _ = bundle;
-        apply_hosts(&config)?;
+        apply_hosts(&config, &paths)?;
         state::mark_starting(&paths)?;
 
         let cli_binary = current_cli_binary()?;
@@ -117,7 +120,7 @@ pub fn helper_start(config_path: Option<PathBuf>) -> Result<()> {
     })();
 
     if let Err(error) = &start_result {
-        let _ = remove_hosts();
+        let _ = remove_hosts(&paths);
         let _ = state::clear_pid(&paths);
         let _ = state::mark_error(&paths, &format!("{error:#}"));
     }
@@ -137,7 +140,8 @@ pub fn helper_stop(config_path: Option<PathBuf>) -> Result<()> {
         }
     }
 
-    remove_hosts()?;
+    remove_hosts(&paths)?;
+    remove_loopback_alias(&config)?;
     state::clear_pid(&paths)?;
     state::mark_stopped(&paths, "加速已停止")?;
     Ok(())
@@ -157,7 +161,8 @@ pub fn clean_hosts(config_path: Option<PathBuf>) -> Result<()> {
     let paths = resolve_paths(config_path)?;
     let config = AppConfig::load_or_create(&paths.config_path)?;
     ensure_elevated(&config, true)?;
-    remove_hosts()?;
+    remove_hosts(&paths)?;
+    remove_loopback_alias(&config)?;
     state::mark_stopped(&paths, "hosts 已清理")?;
     Ok(())
 }
@@ -166,7 +171,8 @@ pub fn apply_hosts_only(config_path: Option<PathBuf>) -> Result<()> {
     let paths = resolve_paths(config_path)?;
     let config = AppConfig::load_or_create(&paths.config_path)?;
     ensure_elevated(&config, true)?;
-    apply_hosts(&config)?;
+    ensure_loopback_alias(&config)?;
+    apply_hosts(&config, &paths)?;
     Ok(())
 }
 

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -18,7 +19,11 @@ pub struct AppConfig {
     #[serde(default = "default_fake_sni")]
     pub fake_sni: Option<String>,
     pub doh_endpoints: Vec<String>,
+    #[serde(default)]
+    pub dns_hosts: BTreeMap<String, String>,
     pub proxy_domains: Vec<String>,
+    #[serde(default)]
+    pub hosts_domains: Vec<String>,
     pub certificate_domains: Vec<String>,
     pub ca_common_name: String,
     pub server_common_name: String,
@@ -89,6 +94,7 @@ impl AppConfig {
             changed |= migrate_loopback_defaults(&mut config);
             changed |= merge_missing_values(&mut config.doh_endpoints, defaults.doh_endpoints);
             changed |= merge_missing_values(&mut config.proxy_domains, defaults.proxy_domains);
+            changed |= merge_missing_values(&mut config.hosts_domains, defaults.hosts_domains);
             changed |= merge_missing_values(
                 &mut config.certificate_domains,
                 defaults.certificate_domains,
@@ -119,10 +125,12 @@ impl AppConfig {
                 .as_ref()
                 .map(|value| value.doh_endpoints.clone())
                 .unwrap_or_default(),
+            dns_hosts: BTreeMap::new(),
             proxy_domains: legacy_network
                 .as_ref()
                 .map(|value| value.proxy_domains.clone())
                 .unwrap_or_default(),
+            hosts_domains: Vec::new(),
             certificate_domains: legacy_network
                 .as_ref()
                 .map(|value| value.certificate_domains.clone())
@@ -133,6 +141,7 @@ impl AppConfig {
         migrate_loopback_defaults(&mut config);
         merge_missing_values(&mut config.doh_endpoints, defaults.doh_endpoints);
         merge_missing_values(&mut config.proxy_domains, defaults.proxy_domains);
+        merge_missing_values(&mut config.hosts_domains, defaults.hosts_domains);
         merge_missing_values(
             &mut config.certificate_domains,
             defaults.certificate_domains,
@@ -168,6 +177,34 @@ impl AppConfig {
             }
             candidate == pattern
         })
+    }
+
+    pub fn find_dns_host_override(&self, host: &str) -> Option<&str> {
+        let candidate = host.to_ascii_lowercase();
+
+        if let Some(target) = self.dns_hosts.get(&candidate) {
+            return Some(target.as_str());
+        }
+
+        self.dns_hosts
+            .iter()
+            .filter_map(|(pattern, target)| {
+                let pattern = pattern.to_ascii_lowercase();
+                let suffix = pattern.strip_prefix("*.")?;
+                candidate
+                    .ends_with(&format!(".{suffix}"))
+                    .then_some((suffix.len(), target.as_str()))
+            })
+            .max_by_key(|(suffix_len, _)| *suffix_len)
+            .map(|(_, target)| target)
+    }
+
+    pub fn hosts_domains(&self) -> &[String] {
+        if self.hosts_domains.is_empty() {
+            &self.proxy_domains
+        } else {
+            &self.hosts_domains
+        }
     }
 }
 

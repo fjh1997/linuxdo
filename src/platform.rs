@@ -1,10 +1,13 @@
 #[cfg(target_os = "windows")]
 use std::ffi::OsString;
 use std::fs;
+use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow, bail};
+use md5::compute as md5_compute;
+use x509_parser::prelude::{FromDer, X509Certificate};
 
 use crate::config::AppConfig;
 
@@ -80,6 +83,7 @@ pub fn run_elevated(executable: &Path, args: &[String]) -> Result<()> {
     match std::env::consts::OS {
         "windows" => run_windows_elevated(executable, args),
         "macos" => run_macos_elevated(executable, args),
+        "android" => run_android_elevated(executable, args),
         _ => run_linux_elevated(executable, args),
     }
 }
@@ -231,6 +235,24 @@ pub fn is_process_running(pid: u32) -> bool {
     }
 }
 
+pub fn ensure_loopback_alias(config: &AppConfig) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        ensure_macos_loopback_aliases(config)?;
+    }
+
+    Ok(())
+}
+
+pub fn remove_loopback_alias(config: &AppConfig) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        remove_macos_loopback_aliases(config)?;
+    }
+
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 fn is_windows_process_running(pid: u32) -> bool {
     let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
@@ -292,6 +314,9 @@ pub fn install_ca(ca_cert_path: &Path, common_name: &str) -> Result<()> {
             };
             run_command("security", &args)?;
         }
+        "android" => {
+            android_install_ca(ca_cert_path, common_name)?;
+        }
         _ => {
             let dest = linux_trust_store_path()
                 .ok_or_else(|| anyhow!("unsupported Linux trust store layout"))?;
@@ -321,6 +346,82 @@ pub fn install_ca(ca_cert_path: &Path, common_name: &str) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn ensure_macos_loopback_aliases(config: &AppConfig) -> Result<()> {
+    for addr in macos_loopback_aliases(config) {
+        let output = Command::new("ifconfig")
+            .args(["lo0", "alias", &addr, "up"])
+            .output()
+            .with_context(|| format!("failed to execute ifconfig for loopback alias {addr}"))?;
+        if output.status.success() {
+            continue;
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.contains("File exists") {
+            continue;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            "unknown error".to_string()
+        };
+        bail!("ifconfig lo0 alias {addr} failed: {detail}");
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn remove_macos_loopback_aliases(config: &AppConfig) -> Result<()> {
+    for addr in macos_loopback_aliases(config) {
+        let output = Command::new("ifconfig")
+            .args(["lo0", "-alias", &addr])
+            .output()
+            .with_context(|| format!("failed to execute ifconfig for loopback alias cleanup {addr}"))?;
+        if output.status.success() {
+            continue;
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.contains("Can't assign requested address") || stderr.contains("does not exist") {
+            continue;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            "unknown error".to_string()
+        };
+        bail!("ifconfig lo0 -alias {addr} failed: {detail}");
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn macos_loopback_aliases(config: &AppConfig) -> Vec<String> {
+    let mut addrs = Vec::new();
+    for candidate in [&config.listen_host, &config.hosts_ip] {
+        if let Ok(ip) = candidate.parse::<Ipv4Addr>() {
+            if ip.octets()[0] == 127 && ip != Ipv4Addr::new(127, 0, 0, 1) {
+                let addr = candidate.to_string();
+                if !addrs.contains(&addr) {
+                    addrs.push(addr);
+                }
+            }
+        }
+    }
+    addrs
+}
+
 pub fn uninstall_ca(common_name: &str) -> Result<()> {
     match std::env::consts::OS {
         "windows" => {
@@ -343,6 +444,9 @@ pub fn uninstall_ca(common_name: &str) -> Result<()> {
                     &["delete-certificate", "-c", common_name, &login_keychain],
                 );
             }
+        }
+        "android" => {
+            android_uninstall_ca(common_name)?;
         }
         _ => {
             if let Some(path) = linux_trust_store_path() {
@@ -714,6 +818,150 @@ fn run_command(command: &str, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "android")]
+fn android_install_ca(ca_cert_path: &Path, common_name: &str) -> Result<()> {
+    let cert_pem = fs::read(ca_cert_path)
+        .with_context(|| format!("failed to read {}", ca_cert_path.display()))?;
+    let hash = android_cert_subject_hash_old(&cert_pem)?;
+    let file_name = format!("{hash}.0");
+    let destinations = android_ca_store_destinations(&file_name);
+    let mut installed = false;
+
+    for dest in destinations {
+        if let Some(parent) = dest.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        match fs::write(&dest, &cert_pem) {
+            Ok(_) => {
+                android_fixup_ca_permissions(&dest)?;
+                installed = true;
+            }
+            Err(_) => continue,
+        }
+    }
+
+    if !installed {
+        bail!("failed to install Android CA into any known trust store");
+    }
+
+    println!("installed root certificate: {common_name}");
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+fn android_install_ca(_ca_cert_path: &Path, _common_name: &str) -> Result<()> {
+    bail!("android certificate installation is unavailable on this platform")
+}
+
+#[cfg(target_os = "android")]
+fn android_uninstall_ca(common_name: &str) -> Result<()> {
+    let mut removed = false;
+    for store in android_ca_store_dirs() {
+        if !store.exists() {
+            continue;
+        }
+        for entry in fs::read_dir(&store)
+            .with_context(|| format!("failed to read directory {}", store.display()))?
+        {
+            let entry = entry.with_context(|| format!("failed to walk {}", store.display()))?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let cert_pem = match fs::read(&path) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            let parsed_cn = match android_cert_common_name(&cert_pem) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            if parsed_cn == common_name {
+                fs::remove_file(&path)
+                    .with_context(|| format!("failed to remove {}", path.display()))?;
+                removed = true;
+            }
+        }
+    }
+
+    if !removed {
+        println!("root certificate not found in Android trust store: {common_name}");
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+fn android_uninstall_ca(_common_name: &str) -> Result<()> {
+    bail!("android certificate removal is unavailable on this platform")
+}
+
+#[cfg(target_os = "android")]
+fn android_ca_store_dirs() -> Vec<PathBuf> {
+    let candidates = [
+        "/apex/com.android.conscrypt/cacerts",
+        "/system/etc/security/cacerts",
+    ];
+    candidates
+        .iter()
+        .map(PathBuf::from)
+        .filter(|path| path.exists())
+        .collect()
+}
+
+#[cfg(target_os = "android")]
+fn android_ca_store_destinations(file_name: &str) -> Vec<PathBuf> {
+    android_ca_store_dirs()
+        .into_iter()
+        .map(|dir| dir.join(file_name))
+        .collect()
+}
+
+#[cfg(target_os = "android")]
+fn android_fixup_ca_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let permissions = fs::Permissions::from_mode(0o644);
+    fs::set_permissions(path, permissions)
+        .with_context(|| format!("failed to chmod {}", path.display()))?;
+    Ok(())
+}
+
+fn android_cert_subject_hash_old(cert_pem: &[u8]) -> Result<String> {
+    let mut reader = std::io::BufReader::new(cert_pem);
+    let mut certs = rustls_pemfile::certs(&mut reader);
+    let der = certs
+        .next()
+        .transpose()
+        .context("failed to parse PEM certificate")?
+        .ok_or_else(|| anyhow!("certificate PEM is empty"))?;
+    let (_, cert) = X509Certificate::from_der(der.as_ref())
+        .map_err(|error| anyhow!("failed to parse X509 certificate: {error}"))?;
+    let digest = md5_compute(cert.tbs_certificate.subject.as_raw());
+    let value = u32::from_le_bytes([digest.0[0], digest.0[1], digest.0[2], digest.0[3]]);
+    Ok(format!("{value:08x}"))
+}
+
+fn android_cert_common_name(cert_pem: &[u8]) -> Result<String> {
+    let mut reader = std::io::BufReader::new(cert_pem);
+    let mut certs = rustls_pemfile::certs(&mut reader);
+    let der = certs
+        .next()
+        .transpose()
+        .context("failed to parse PEM certificate")?
+        .ok_or_else(|| anyhow!("certificate PEM is empty"))?;
+    let (_, cert) = X509Certificate::from_der(der.as_ref())
+        .map_err(|error| anyhow!("failed to parse X509 certificate: {error}"))?;
+    let subject = cert.subject();
+    let attribute = subject
+        .iter_common_name()
+        .next()
+        .ok_or_else(|| anyhow!("certificate common name is missing"))?;
+    let cn = attribute
+        .as_str()
+        .map_err(|error| anyhow!("failed to decode certificate common name: {error}"))?;
+    Ok(cn.to_string())
+}
+
 #[cfg(target_os = "windows")]
 fn configure_hidden_windows_command(command: &mut Command) {
     use std::os::windows::process::CommandExt;
@@ -1064,6 +1312,42 @@ fn run_linux_elevated(executable: &Path, args: &[String]) -> Result<()> {
     }
 
     bail!("pkexec is required on Linux for GUI elevation prompts")
+}
+
+#[cfg(target_os = "android")]
+fn run_android_elevated(executable: &Path, args: &[String]) -> Result<()> {
+    let mut command_line = shell_quote_arg(&executable.to_string_lossy());
+    for arg in args {
+        command_line.push(' ');
+        command_line.push_str(&shell_quote_arg(arg));
+    }
+
+    let output = Command::new("su")
+        .args(["-c", &command_line])
+        .output()
+        .context("failed to execute su")?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if stderr.is_empty() {
+        bail!("su rejected the elevation request");
+    }
+    bail!("su failed: {stderr}");
+}
+
+#[cfg(not(target_os = "android"))]
+fn run_android_elevated(_executable: &Path, _args: &[String]) -> Result<()> {
+    bail!("android elevation is unavailable on this platform")
+}
+
+fn shell_quote_arg(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
 fn shell_join(executable: &Path, args: &[String]) -> String {

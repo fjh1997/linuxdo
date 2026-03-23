@@ -513,6 +513,7 @@ async fn resolve_upstream(state: &AppState, host: &str, port: u16) -> Result<Res
         });
     }
 
+    let override_host = state.config.find_dns_host_override(host).map(str::to_owned);
     let cache_key = ResolveCacheKey {
         host: host.to_ascii_lowercase(),
         port,
@@ -521,12 +522,38 @@ async fn resolve_upstream(state: &AppState, host: &str, port: u16) -> Result<Res
         return Ok(cached);
     }
 
-    let binding = resolve_https_binding(state, host).await?;
+    let override_target = override_host
+        .as_deref()
+        .map(parse_dns_host_override)
+        .transpose()?;
+
+    if let Some(DnsHostOverride::Addresses(ips)) = override_target.as_ref() {
+        let upstream = ResolvedUpstream {
+            addrs: ips
+                .iter()
+                .copied()
+                .map(|ip| SocketAddr::new(ip, port))
+                .collect::<Vec<_>>(),
+            ech_config: None,
+        };
+        write_cached_upstream(state, cache_key, upstream.clone()).await;
+        return Ok(upstream);
+    }
+
+    let binding_host = override_target
+        .as_ref()
+        .and_then(|target| match target {
+            DnsHostOverride::Alias(host) => Some(host.as_str()),
+            DnsHostOverride::Addresses(_) => None,
+        })
+        .unwrap_or(host);
+
+    let binding = resolve_https_binding(state, binding_host).await?;
     let target_host = binding
         .target_name
         .clone()
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| host.to_string());
+        .unwrap_or_else(|| binding_host.to_string());
 
     let public_name = binding
         .ech_public_name
@@ -696,6 +723,32 @@ async fn doh_query_once(
     }
 
     Ok(payload.answers.unwrap_or_default())
+}
+
+enum DnsHostOverride {
+    Alias(String),
+    Addresses(Vec<IpAddr>),
+}
+
+fn parse_dns_host_override(raw: &str) -> Result<DnsHostOverride> {
+    let value = raw.trim();
+    if value.is_empty() {
+        anyhow::bail!("dns_hosts override cannot be empty");
+    }
+
+    if let Some(alias) = value.strip_prefix("domain:") {
+        let alias = alias.trim();
+        if alias.is_empty() {
+            anyhow::bail!("dns_hosts domain override cannot be empty");
+        }
+        return Ok(DnsHostOverride::Alias(alias.to_string()));
+    }
+
+    if let Ok(ip) = value.parse::<IpAddr>() {
+        return Ok(DnsHostOverride::Addresses(vec![ip]));
+    }
+
+    Ok(DnsHostOverride::Alias(value.to_string()))
 }
 
 fn parse_https_answer(raw_rdata: &str) -> Result<HttpsServiceBinding> {

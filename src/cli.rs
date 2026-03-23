@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 use crate::gui;
+use crate::config::AppConfig;
 use crate::service;
 
 #[derive(Debug, Parser)]
@@ -31,6 +33,8 @@ pub enum Command {
     UninstallCert,
     Cleanup,
     #[command(hide = true)]
+    ConfigJson,
+    #[command(hide = true)]
     HelperStart,
     #[command(hide = true)]
     HelperStop,
@@ -43,8 +47,15 @@ pub enum Command {
 pub async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         None | Some(Command::Gui) => {
+            #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+            {
             let config_path = service::init_config(cli.config.clone())?;
             gui::run(config_path)?;
+            }
+            #[cfg(target_os = "android")]
+            {
+                anyhow::bail!("GUI is not supported on Android yet; use CLI subcommands");
+            }
         }
         Some(Command::InitConfig) => {
             let config_path = service::init_config(cli.config)?;
@@ -83,6 +94,11 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Command::Cleanup) => {
             service::cleanup(cli.config)?;
             println!("cleanup complete");
+        }
+        Some(Command::ConfigJson) => {
+            let paths = service::resolve_paths(cli.config)?;
+            let config = AppConfig::load_or_create(&paths.config_path)?;
+            println!("{}", serde_json::to_string_pretty(&config)?);
         }
         Some(Command::HelperStart) => {
             service::helper_start(cli.config)?;

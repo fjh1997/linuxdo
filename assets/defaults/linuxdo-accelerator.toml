@@ -7,11 +7,19 @@ fake_sni = "www.cloudflare.com"
 
 doh_endpoints = [
     "https://aaa.ddd.oaifree.com/query-dns",
-    "https://cloudflare-dns.com/dns-query",
-    "https://dns.google/resolve",
+    "https://223.5.5.5/dns-query",
 ]
+managed_prefer_ipv6 = true
+dns_hosts = {}
+# example:
+# dns_hosts = { "example.com" = "1.1.1.1", "*.example.com" = "domain:real.example.net" }
 
 proxy_domains = [
+    "linux.do",
+    "*.linux.do",
+]
+
+hosts_domains = [
     "linux.do",
     "2048.linux.do",
     "ads.linux.do",
