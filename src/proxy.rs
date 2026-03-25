@@ -429,8 +429,7 @@ fn build_upstream_request(
         }
         builder = builder.header(name, value);
     }
-    builder = builder
-        .header(HOST, request_host);
+    builder = builder.header(HOST, request_host);
     builder
         .body(Full::new(body))
         .context("failed to build upstream request")
@@ -551,7 +550,13 @@ async fn resolve_upstream(state: &AppState, host: &str, port: u16) -> Result<Res
                 .collect::<Vec<_>>(),
             ech_config: None,
         };
-        write_cached_upstream(state, cache_key, upstream.clone(), FALLBACK_RESOLVE_CACHE_TTL).await;
+        write_cached_upstream(
+            state,
+            cache_key,
+            upstream.clone(),
+            FALLBACK_RESOLVE_CACHE_TTL,
+        )
+        .await;
         return Ok(upstream);
     }
 
@@ -632,7 +637,10 @@ async fn resolve_https_binding(
     Ok((bindings.into_iter().next().unwrap_or_default(), ttl))
 }
 
-async fn doh_lookup_ip_addrs(state: &AppState, host: &str) -> Result<(Vec<IpAddr>, Option<Duration>)> {
+async fn doh_lookup_ip_addrs(
+    state: &AppState,
+    host: &str,
+) -> Result<(Vec<IpAddr>, Option<Duration>)> {
     let mut addrs = Vec::new();
 
     let (ipv6_answers, ipv4_answers) =
@@ -692,18 +700,16 @@ async fn doh_query(state: &AppState, host: &str, record_type: &str) -> Result<Ve
         return Ok(cached);
     }
 
-    let mut last_error = None;
-    for endpoint in &state.config.doh_endpoints {
-        match doh_query_once(&state.doh_client, endpoint, host, record_type).await {
-            Ok(answers) => {
-                write_cached_doh_answers(state, cache_key.clone(), answers.clone()).await;
-                return Ok(answers);
-            }
-            Err(error) => last_error = Some(error),
-        }
-    }
+    let endpoint =
+        state.config.doh_endpoints.first().ok_or_else(|| {
+            anyhow::anyhow!("DoH 不可用，请在配置中自行更换 DoH：未配置 DoH 端点")
+        })?;
 
-    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("no DoH endpoint available")))
+    let answers = doh_query_once(&state.doh_client, endpoint, host, record_type)
+        .await
+        .with_context(|| format!("DoH 不可用，请在配置中自行更换 DoH：{endpoint}"))?;
+    write_cached_doh_answers(state, cache_key, answers.clone()).await;
+    Ok(answers)
 }
 
 async fn read_cached_upstream(state: &AppState, key: &ResolveCacheKey) -> Option<ResolvedUpstream> {

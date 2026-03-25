@@ -66,7 +66,7 @@ class LinuxdoDnsResolver(
         .dns(StaticDns(endpoints.associate { it.host to it.addresses }))
         .build()
 
-    private val preparedEndpoints = endpoints
+    private val primaryEndpoint = endpoints.firstOrNull()
 
     fun resolveManagedPayload(requestPayload: ByteArray, query: ParsedDnsQuery): ByteArray {
         val host = query.name.lowercase(Locale.US)
@@ -82,35 +82,30 @@ class LinuxdoDnsResolver(
             return DnsPacketCodec.buildResponse(query, resolution)
         }
 
-        var lastError: Exception? = null
-        for (endpoint in preparedEndpoints) {
-            try {
-                if (supportsDnsMessage(endpoint.url)) {
-                    val resolution = queryDohDnsMessageRaw(endpoint, requestPayload, query)
+        val endpoint = requirePrimaryEndpoint()
+        try {
+            if (supportsDnsMessage(endpoint.url)) {
+                val resolution = queryDohDnsMessageRaw(endpoint, requestPayload, query)
+                writeCache(host, query.type, resolution)
+                Log.d(tag, "resolved $host type=${query.type} via ${endpoint.rawUrl} raw dns-message")
+                return DnsPacketCodec.buildResponse(query, resolution)
+            }
+
+            if (isJsonFriendlyType(query.type)) {
+                val resolution = DnsResolution(queryDohJson(endpoint, host, query.type))
+                if (resolution.answers.isNotEmpty()) {
                     writeCache(host, query.type, resolution)
-                    Log.d(tag, "resolved $host type=${query.type} via ${endpoint.rawUrl} raw dns-message")
+                    Log.d(tag, "resolved $host type=${query.type} via ${endpoint.rawUrl} answers=${resolution.answers.size}")
                     return DnsPacketCodec.buildResponse(query, resolution)
                 }
-
-                if (isJsonFriendlyType(query.type)) {
-                    val resolution = DnsResolution(queryDohJson(endpoint, host, query.type))
-                    if (resolution.answers.isNotEmpty()) {
-                        writeCache(host, query.type, resolution)
-                        Log.d(tag, "resolved $host type=${query.type} via ${endpoint.rawUrl} answers=${resolution.answers.size}")
-                        return DnsPacketCodec.buildResponse(query, resolution)
-                    }
-                    lastError = IOException("empty answer from ${endpoint.rawUrl}")
-                    continue
-                }
-
-                lastError = IOException("endpoint ${endpoint.rawUrl} does not support dns-message for type ${query.type}")
-            } catch (error: Exception) {
-                Log.w(tag, "resolver endpoint failed for $host via ${endpoint.rawUrl}: ${error.message}")
-                lastError = error
+                throw IOException("empty answer from ${endpoint.rawUrl}")
             }
-        }
 
-        throw IOException("DoH lookup failed for $host type=${query.type}: ${lastError?.message ?: "no endpoint available"}")
+            throw IOException("endpoint ${endpoint.rawUrl} does not support dns-message for type ${query.type}")
+        } catch (error: Exception) {
+            Log.w(tag, "resolver endpoint failed for $host via ${endpoint.rawUrl}: ${error.message}")
+            throw wrapDohFailure(endpoint, host, query.type, error)
+        }
     }
 
     fun resolve(query: ParsedDnsQuery): DnsResolution {
@@ -124,36 +119,30 @@ class LinuxdoDnsResolver(
             return it
         }
 
-        val managedHost = config.isManagedHost(host)
+        val managedHost = config.shouldUseManagedDoh(host)
         resolveLocal(host, query.type)?.let {
             val resolution = DnsResolution(it)
             writeCache(host, query.type, resolution)
             return resolution
         }
 
-        val endpoints = if (managedHost) {
-            preparedEndpoints
-        } else {
-            preparedEndpoints.drop(1).ifEmpty { preparedEndpoints }
+        if (!managedHost) {
+            return DnsResolution(emptyList())
         }
 
-        var lastError: Exception? = null
-        for (endpoint in endpoints) {
-            try {
-                val resolution = DnsResolution(queryDoh(endpoint, host, query.type))
-                if (resolution.answers.isNotEmpty()) {
-                    writeCache(host, query.type, resolution)
-                    Log.d(tag, "resolved $host type=${query.type} via ${endpoint.rawUrl} answers=${resolution.answers.size}")
-                    return resolution
-                }
-                lastError = IOException("empty answer from ${endpoint.rawUrl}")
-            } catch (error: Exception) {
-                Log.w(tag, "resolver endpoint failed for $host via ${endpoint.rawUrl}: ${error.message}")
-                lastError = error
+        val endpoint = requirePrimaryEndpoint()
+        try {
+            val resolution = DnsResolution(queryDoh(endpoint, host, query.type))
+            if (resolution.answers.isNotEmpty()) {
+                writeCache(host, query.type, resolution)
+                Log.d(tag, "resolved $host type=${query.type} via ${endpoint.rawUrl} answers=${resolution.answers.size}")
+                return resolution
             }
+            throw IOException("empty answer from ${endpoint.rawUrl}")
+        } catch (error: Exception) {
+            Log.w(tag, "resolver endpoint failed for $host via ${endpoint.rawUrl}: ${error.message}")
+            throw wrapDohFailure(endpoint, host, query.type, error)
         }
-
-        throw IOException("DoH lookup failed for $host: ${lastError?.message ?: "no endpoint available"}")
     }
 
     private fun resolveLocal(host: String, type: Int): List<DnsAnswerRecord>? {
@@ -186,13 +175,29 @@ class LinuxdoDnsResolver(
     }
 
     private fun queryAlias(alias: String, type: Int): List<DnsAnswerRecord> {
-        for (endpoint in preparedEndpoints) {
-            try {
-                return queryDoh(endpoint, alias, type)
-            } catch (_: Exception) {
-            }
+        val endpoint = primaryEndpoint ?: return emptyList()
+        return try {
+            queryDoh(endpoint, alias, type)
+        } catch (_: Exception) {
+            emptyList()
         }
-        return emptyList()
+    }
+
+    private fun requirePrimaryEndpoint(): PreparedDohEndpoint {
+        return primaryEndpoint ?: throw IOException("DoH 不可用，请自行更换 DoH")
+    }
+
+    private fun wrapDohFailure(
+        endpoint: PreparedDohEndpoint,
+        host: String,
+        type: Int,
+        error: Exception,
+    ): IOException {
+        val detail = error.message ?: error.javaClass.simpleName
+        return IOException(
+            "DoH 不可用，请自行更换 DoH。当前端点：${endpoint.rawUrl}，查询：$host ${queryTypeName(type)}，原因：$detail",
+            error,
+        )
     }
 
     private fun queryDoh(

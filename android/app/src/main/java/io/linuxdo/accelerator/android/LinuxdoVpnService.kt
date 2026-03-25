@@ -25,6 +25,7 @@ import java.io.IOException
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
@@ -33,6 +34,12 @@ class LinuxdoVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var workerThread: Thread? = null
     private val running = AtomicBoolean(false)
+    @Volatile
+    private var preferManagedIpv6Status = false
+    @Volatile
+    private var activeDohEndpoint = "未配置"
+    @Volatile
+    private var lastDohFailureDetail: String? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -42,7 +49,7 @@ class LinuxdoVpnService : VpnService() {
             }
             ACTION_START -> {
                 if (running.get()) {
-                    broadcastStatus(true, "加速中", null)
+                    broadcastStatus(true, currentRunningStatusText(), currentRunningDetail())
                     return START_STICKY
                 }
                 ensureNotificationChannel()
@@ -65,7 +72,11 @@ class LinuxdoVpnService : VpnService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        broadcastStatus(running.get(), if (running.get()) "加速中" else "未启动", null)
+        if (running.get()) {
+            broadcastStatus(true, currentRunningStatusText(), currentRunningDetail())
+        } else {
+            broadcastStatus(false, "未启动", null)
+        }
     }
 
     override fun onDestroy() {
@@ -105,14 +116,11 @@ class LinuxdoVpnService : VpnService() {
 
                 vpnInterface = vpn
                 running.set(true)
-                val firstDoh = preparedEndpoints.firstOrNull()?.rawUrl ?: "未配置"
-                Log.i(tag, "vpn established, first DoH=$firstDoh")
-                val detail = if (preferManagedIpv6) {
-                    "linux.do 相关 DNS 走自定义 DoH，并保留 AAAA 返回；其他域名走系统默认 DNS。"
-                } else {
-                    "linux.do 相关 DNS 走自定义 DoH，其他域名走系统默认 DNS。"
-                }
-                broadcastStatus(true, "加速中", detail)
+                preferManagedIpv6Status = preferManagedIpv6
+                activeDohEndpoint = preparedEndpoints.firstOrNull()?.rawUrl ?: "未配置"
+                lastDohFailureDetail = null
+                Log.i(tag, "vpn established, first DoH=$activeDohEndpoint")
+                broadcastStatus(true, currentRunningStatusText(), currentRunningDetail())
                 runDnsLoop(vpn, config, preparedEndpoints, systemDnsServers)
             } catch (error: Exception) {
                 Log.e(tag, "startAcceleratorAsync failed", error)
@@ -148,9 +156,12 @@ class LinuxdoVpnService : VpnService() {
                 val query = DnsPacketCodec.parseDnsQuery(requestPacket.payload) ?: continue
                 val responsePayload = if (shouldUseManagedDoh(config, query)) {
                     try {
-                        resolver.resolveManagedPayload(requestPacket.payload, query)
+                        val payload = resolver.resolveManagedPayload(requestPacket.payload, query)
+                        clearDohFailure()
+                        payload
                     } catch (error: Exception) {
                         Log.w(tag, "managed dns query failed for ${query.name} type=${query.type}: ${error.message}")
+                        reportDohFailure(query, error)
                         DnsPacketCodec.buildResponse(query, DnsResolution(emptyList(), responseCode = 2))
                     }
                 } else {
@@ -174,7 +185,51 @@ class LinuxdoVpnService : VpnService() {
     }
 
     private fun shouldUseManagedDoh(config: LinuxdoConfig, query: ParsedDnsQuery): Boolean {
-        return config.isManagedHost(query.name)
+        return config.shouldUseManagedDoh(query.name)
+    }
+
+    private fun currentRunningStatusText(): String {
+        return if (lastDohFailureDetail == null) "加速中" else "加速中（DoH 异常）"
+    }
+
+    private fun currentRunningDetail(): String {
+        return lastDohFailureDetail ?: buildHealthyRunningDetail()
+    }
+
+    private fun buildHealthyRunningDetail(): String {
+        val summary = if (preferManagedIpv6Status) {
+            "仅 linux.do / *.linux.do 走自定义 DoH，并保留 AAAA 返回；其他域名走系统默认 DNS。"
+        } else {
+            "仅 linux.do / *.linux.do 走自定义 DoH；其他域名走系统默认 DNS。"
+        }
+        return "$summary 当前 DoH：$activeDohEndpoint"
+    }
+
+    private fun clearDohFailure() {
+        if (lastDohFailureDetail == null || !running.get()) {
+            return
+        }
+        lastDohFailureDetail = null
+        broadcastStatus(true, currentRunningStatusText(), currentRunningDetail())
+    }
+
+    private fun reportDohFailure(query: ParsedDnsQuery, error: Exception) {
+        val detail = buildString {
+            append("DoH 查询失败：")
+            append(query.name.lowercase(Locale.US))
+            append(' ')
+            append(queryTypeName(query.type))
+            append("。当前 DoH：")
+            append(activeDohEndpoint)
+            append("。原因：")
+            append(error.message ?: error.javaClass.simpleName)
+            append("。请自行更换 DoH；其他域名仍走系统默认 DNS。")
+        }
+        if (detail == lastDohFailureDetail || !running.get()) {
+            return
+        }
+        lastDohFailureDetail = detail
+        broadcastStatus(true, currentRunningStatusText(), detail)
     }
 
     private fun forwardSystemDns(payload: ByteArray, servers: List<InetAddress>): ByteArray? {
@@ -233,6 +288,7 @@ class LinuxdoVpnService : VpnService() {
         running.set(false)
         safeClose(vpnInterface)
         vpnInterface = null
+        lastDohFailureDetail = null
         broadcastStatus(false, statusText, "Android VPN DNS 接管已关闭。")
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -344,7 +400,7 @@ class LinuxdoVpnService : VpnService() {
             if (actualRunning) {
                 val status = if (savedStatus.isBlank() || savedStatus == "未启动") "加速中" else savedStatus
                 val detail = if (savedDetail.isBlank()) {
-                    "linux.do 相关 DNS 由 Android VPN 接管，自定义 DoH 已生效。"
+                    "仅 linux.do / *.linux.do 走自定义 DoH；其他域名走系统默认 DNS。"
                 } else {
                     savedDetail
                 }

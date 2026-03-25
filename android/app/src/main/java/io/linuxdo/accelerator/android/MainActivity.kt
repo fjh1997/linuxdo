@@ -104,7 +104,7 @@ class MainActivity : AppCompatActivity() {
             running,
             normalizedStatus,
             if (detail.isBlank()) {
-                "配置文件和 Android 壳已就绪，点击开始加速后会申请 VPN 权限，并强制通过自定义 DoH 接管 linux.do 相关 DNS。"
+                "配置文件和 Android 壳已就绪。启动后仅 linux.do / *.linux.do 走自定义 DoH，其他域名仍走系统默认 DNS。"
             } else {
                 detail
             },
@@ -137,7 +137,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startVpnService() {
-        renderState(false, "正在启动", "正在建立 Android VPN，并启用自定义 DoH DNS 接管...")
+        renderState(false, "正在启动", "正在建立 Android VPN，并启用 linux.do / *.linux.do 的自定义 DoH 接管...")
         ContextCompat.startForegroundService(
             this,
             Intent(this, LinuxdoVpnService::class.java).setAction(LinuxdoVpnService.ACTION_START),

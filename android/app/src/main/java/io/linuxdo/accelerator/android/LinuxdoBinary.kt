@@ -16,6 +16,8 @@ data class LinuxdoConfig(
     val dnsHosts: Map<String, String>,
     val proxyDomains: List<String>,
 ) {
+    fun shouldUseManagedDoh(host: String): Boolean = matchesProxyHost(host)
+
     fun isManagedHost(host: String): Boolean {
         val candidate = host.lowercase(Locale.US)
         return findDnsHostOverride(candidate) != null || matchesProxyHost(candidate)
