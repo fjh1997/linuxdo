@@ -37,6 +37,7 @@ signing-identity = "-"
 section = "utils"
 package-name = "linuxdo-accelerator"
 desktop-template = "packaging/linux/linuxdo-accelerator.desktop.hbs"
+depends = ["libgtk-3-0", "libxdo3"]
 
 [package.metadata.packager.nsis]
 installer-mode = "perMachine"
