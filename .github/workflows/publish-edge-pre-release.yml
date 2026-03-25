@@ -239,9 +239,12 @@ jobs:
 
       - name: Replace edge tag and pre-release
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          gh --version
+          gh auth status
+
           if gh release view "${EDGE_TAG}" >/dev/null 2>&1; then
             gh release delete "${EDGE_TAG}" -y --cleanup-tag
           fi
