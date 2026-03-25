@@ -33,6 +33,11 @@ generate-desktop-entry = true
 [package.metadata.packager.macos]
 signing-identity = "-"
 
+[package.metadata.packager.dmg]
+window-size = { width = 640, height = 420 }
+app-position = { x = 170, y = 185 }
+application-folder-position = { x = 470, y = 185 }
+
 [package.metadata.packager.deb]
 section = "utils"
 package-name = "linuxdo-accelerator"
