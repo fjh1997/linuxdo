@@ -425,7 +425,7 @@ impl AcceleratorApp {
 
     fn maintenance_hint(&self) -> &'static str {
         if self.status.running {
-            return "恢复 hosts 需要先停止加速；彻底恢复会自动停止并清理。";
+            return "恢复 hosts 会先自动停止加速再恢复；彻底恢复会自动停止并清理。";
         }
 
         match self.hosts_backup_state {
@@ -440,12 +440,15 @@ impl AcceleratorApp {
     }
 
     fn can_restore_hosts(&self) -> bool {
-        !self.busy && !self.status.running && self.hosts_backup_state == BackupState::Ready
+        !self.busy && self.hosts_backup_state == BackupState::Ready
     }
 
     fn confirm_summary(&self, action: GuiAction) -> String {
         match action {
-            GuiAction::RestoreHosts => "会用首次接管前的备份覆盖当前 hosts 文件。".to_string(),
+            GuiAction::RestoreHosts => {
+                "会用首次接管前的备份覆盖当前 hosts 文件；如果加速正在运行，会先自动停止。"
+                    .to_string()
+            }
             GuiAction::Cleanup => {
                 "会停止加速，并尽量把本程序对系统做的改动恢复到初始状态。".to_string()
             }
@@ -457,7 +460,8 @@ impl AcceleratorApp {
         match action {
             GuiAction::RestoreHosts => vec![
                 "仅恢复 hosts 文件，不会卸载根证书。".to_string(),
-                "恢复前需要确保加速已经停止。".to_string(),
+                "如果当前加速正在运行，会先自动停止加速服务。".to_string(),
+                "恢复后会尝试刷新系统 DNS 缓存。".to_string(),
                 "恢复完成后，如需再次加速，可重新点击“开始加速”。".to_string(),
             ],
             GuiAction::Cleanup => {
@@ -497,7 +501,7 @@ impl AcceleratorApp {
             }
             GuiAction::RestoreHosts => Some((
                 if self.status.running {
-                    "当前状态：加速中，需先停止后再恢复 hosts。".to_string()
+                    "当前状态：加速中，确认后会先自动停止，再恢复 hosts。".to_string()
                 } else {
                     "当前状态：已停止，可直接恢复 hosts。".to_string()
                 },

@@ -12,8 +12,8 @@ use crate::hosts::{
 use crate::hosts_store::{BackupState, backup_state, clear_hosts_backup};
 use crate::paths::AppPaths;
 use crate::platform::{
-    ensure_elevated, ensure_loopback_alias, install_ca, is_process_running, remove_loopback_alias,
-    spawn_detached, terminate_process, uninstall_ca,
+    ensure_elevated, ensure_loopback_alias, flush_dns_cache, install_ca, is_process_running,
+    remove_loopback_alias, spawn_detached, terminate_process, uninstall_ca,
 };
 use crate::proxy::run_proxy;
 use crate::runtime_log;
@@ -309,10 +309,22 @@ pub fn restore_hosts(config_path: Option<PathBuf>) -> Result<()> {
     let result = (|| -> Result<()> {
         let config = AppConfig::load_or_create(&paths.config_path)?;
         ensure_elevated(&config, true)?;
-        ensure_service_stopped_for_hosts_change(&paths, "restore-hosts")?;
+        let was_running = state::refresh(&paths)?.running;
+        if let Some(issue) = terminate_running_service(&paths)? {
+            bail!(issue);
+        }
         restore_hosts_file(&paths)?;
+        let _ = flush_dns_cache();
         remove_loopback_alias(&config)?;
-        state::mark_stopped(&paths, "hosts 已恢复为备份")?;
+        let _ = state::clear_pid(&paths);
+        state::mark_stopped(
+            &paths,
+            if was_running {
+                "已停止加速并恢复 hosts 备份"
+            } else {
+                "hosts 已恢复为备份"
+            },
+        )?;
         Ok(())
     })();
     match &result {

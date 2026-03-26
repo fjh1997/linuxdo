@@ -92,6 +92,33 @@ pub fn run_elevated(executable: &Path, args: &[String]) -> Result<()> {
     }
 }
 
+pub fn flush_dns_cache() -> Result<()> {
+    match std::env::consts::OS {
+        "windows" => run_command("ipconfig", &["/flushdns"]),
+        "macos" => {
+            let _ = run_command("dscacheutil", &["-flushcache"]);
+            let _ = run_command("killall", &["-HUP", "mDNSResponder"]);
+            Ok(())
+        }
+        "linux" => {
+            if run_command("resolvectl", &["flush-caches"]).is_ok() {
+                return Ok(());
+            }
+            if run_command("systemd-resolve", &["--flush-caches"]).is_ok() {
+                return Ok(());
+            }
+            if run_command("service", &["nscd", "restart"]).is_ok() {
+                return Ok(());
+            }
+            if run_command("rc-service", &["nscd", "restart"]).is_ok() {
+                return Ok(());
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
 #[cfg(target_os = "windows")]
 pub fn prepare_windows_cli_stdio(args: &[OsString]) {
     if args.len() <= 1 {
