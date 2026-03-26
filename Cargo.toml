@@ -73,12 +73,12 @@ md5 = "0.7"
 fontdb = "0.23"
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
-eframe = { version = "0.31", default-features = false, features = ["glow"] }
+eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts"] }
 tray-icon = "0.19"
 winit = "0.30"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-eframe = { version = "0.31", default-features = false, features = ["glow", "x11", "wayland"] }
+eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
 tray-icon = "0.19"
 gtk = "0.18"
 
