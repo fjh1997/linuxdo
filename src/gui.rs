@@ -902,20 +902,19 @@ impl AcceleratorApp {
                     .color(egui::Color32::from_rgb(243, 179, 74)),
             );
             ui.add_space(4.0);
-            ui.horizontal_wrapped(|ui| {
-                compact_metric(ui, "域名", &self.config.proxy_domains.len().to_string());
-                compact_metric(ui, "DoH", &self.config.doh_endpoints.len().to_string());
-                compact_metric(
-                    ui,
-                    "证书",
-                    &self.config.certificate_domains.len().to_string(),
-                );
+            let hosts_count = self.config.hosts_domains().len().to_string();
+            let doh_count = self.config.doh_endpoints.len().to_string();
+            let cert_count = self.config.certificate_domains.len().to_string();
+            ui.columns(3, |columns| {
+                scope_metric_card(&mut columns[0], "域名", &hosts_count);
+                scope_metric_card(&mut columns[1], "DoH", &doh_count);
+                scope_metric_card(&mut columns[2], "证书", &cert_count);
             });
             ui.add_space(6.0);
-            compact_row(ui, "上游", &self.config.upstream);
-            compact_row(
+            detail_value_row(ui, "上游", &self.config.upstream);
+            detail_value_row(
                 ui,
-                "DoH",
+                "DoH 端点",
                 &self
                     .config
                     .doh_endpoints
@@ -1895,23 +1894,30 @@ fn compact_metric(ui: &mut egui::Ui, label: &str, value: &str) {
         });
 }
 
-fn compact_row(ui: &mut egui::Ui, label: &str, value: &str) {
-    ui.horizontal(|ui| {
-        ui.add_sized(
-            [42.0, 18.0],
-            egui::Label::new(
-                RichText::new(label)
-                    .font(FontId::proportional(10.5))
-                    .strong()
-                    .color(egui::Color32::from_rgb(185, 191, 197)),
-            ),
-        );
-        ui.label(
-            RichText::new(value)
-                .font(FontId::monospace(10.5))
-                .color(egui::Color32::from_rgb(224, 227, 230)),
-        );
-    });
+fn scope_metric_card(ui: &mut egui::Ui, label: &str, value: &str) {
+    egui::Frame::new()
+        .fill(egui::Color32::from_rgb(19, 22, 27))
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 52, 60)))
+        .inner_margin(egui::Margin::symmetric(10, 10))
+        .corner_radius(egui::CornerRadius::same(8))
+        .show(ui, |ui| {
+            ui.set_min_size(egui::vec2(0.0, 64.0));
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    RichText::new(label)
+                        .font(FontId::proportional(10.2))
+                        .strong()
+                        .color(egui::Color32::from_rgb(160, 171, 179)),
+                );
+                ui.add_space(3.0);
+                ui.label(
+                    RichText::new(value)
+                        .font(FontId::proportional(18.0))
+                        .strong()
+                        .color(egui::Color32::from_rgb(243, 179, 74)),
+                );
+            });
+        });
 }
 
 fn detail_value_row(ui: &mut egui::Ui, label: &str, value: &str) {
