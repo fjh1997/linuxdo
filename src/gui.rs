@@ -38,8 +38,9 @@ const ACTIVE_REPAINT_INTERVAL: Duration = Duration::from_millis(100);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_secs(5);
 const TRAY_REPAINT_INTERVAL: Duration = Duration::from_secs(15);
 const EMBEDDED_CJK_FONT: &[u8] = include_bytes!("../assets/fonts/DroidSansFallbackFull.ttf");
-const LAUNCHER_WINDOW_SIZE: [f32; 2] = [432.0, 136.0];
+const LAUNCHER_WINDOW_SIZE: [f32; 2] = [720.0, 250.0];
 const DETAILS_WINDOW_SIZE: [f32; 2] = [760.0, 520.0];
+const TITLE_BAR_HEIGHT: f32 = 48.0;
 
 pub fn run(config_path: PathBuf) -> Result<()> {
     let native_options = eframe::NativeOptions {
@@ -48,6 +49,7 @@ pub fn run(config_path: PathBuf) -> Result<()> {
             .with_title(APP_WINDOW_TITLE)
             .with_app_id(APP_ID)
             .with_icon(branding::icon_data(256))
+            .with_decorations(false)
             .with_inner_size(LAUNCHER_WINDOW_SIZE)
             .with_min_inner_size(LAUNCHER_WINDOW_SIZE)
             .with_max_inner_size(LAUNCHER_WINDOW_SIZE)
@@ -521,6 +523,52 @@ impl AcceleratorApp {
         }
     }
 
+    fn render_window_title_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let width = ui.available_width();
+        let inner = ui.allocate_ui_with_layout(
+            egui::vec2(width, TITLE_BAR_HEIGHT),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(10.0, 0.0);
+                ui.add_space(8.0);
+                ui.add(egui::Image::new((self.logo.id(), egui::vec2(28.0, 28.0))));
+                ui.label(
+                    RichText::new(APP_WINDOW_TITLE)
+                        .font(FontId::proportional(16.0))
+                        .strong()
+                        .color(egui::Color32::from_rgb(244, 245, 247)),
+                );
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add(title_bar_button("×", egui::vec2(34.0, 26.0), true, true))
+                        .clicked()
+                    {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    if ui
+                        .add(title_bar_button("—", egui::vec2(34.0, 26.0), false, true))
+                        .clicked()
+                    {
+                        self.minimize_to_tray(ctx);
+                    }
+                });
+            },
+        );
+
+        if inner.response.drag_started() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+        }
+
+        ui.painter().line_segment(
+            [
+                inner.response.rect.left_bottom(),
+                inner.response.rect.right_bottom(),
+            ],
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 53, 61)),
+        );
+    }
+
     fn render_header(&self, ui: &mut egui::Ui) {
         let (headline, accent) = self.headline_status();
         ui.horizontal(|ui| {
@@ -561,10 +609,50 @@ impl AcceleratorApp {
         });
     }
 
+    fn render_launcher_status_card(&self, ui: &mut egui::Ui) {
+        let (headline, accent) = self.headline_status();
+        let detail_text = format!("状态: {}", self.status_message());
+
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgb(32, 36, 43))
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(68, 74, 82)))
+            .inner_margin(egui::Margin::same(16))
+            .corner_radius(egui::CornerRadius::same(12))
+            .show(ui, |ui| {
+                ui.set_min_size(egui::vec2(0.0, 84.0));
+                ui.vertical_centered_justified(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("●")
+                                .font(FontId::proportional(14.0))
+                                .color(accent),
+                        );
+                        ui.label(
+                            RichText::new(match headline {
+                                "已接管" => "正在加速",
+                                "处理中" => "正在处理",
+                                "异常" => "加速异常",
+                                _ => "等待启动",
+                            })
+                            .font(FontId::proportional(18.0))
+                            .strong()
+                            .color(accent),
+                        );
+                    });
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new(detail_text)
+                            .font(FontId::proportional(12.4))
+                            .color(egui::Color32::from_rgb(206, 212, 218)),
+                    );
+                });
+            });
+    }
+
     fn render_action_panel(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         panel_frame(
-            egui::Color32::from_rgb(23, 27, 33),
-            egui::Color32::from_rgb(50, 56, 64),
+            egui::Color32::from_rgb(28, 32, 38),
+            egui::Color32::from_rgb(54, 60, 68),
         )
         .show(ui, |ui| {
             let primary_label = if self.status.running {
@@ -574,30 +662,34 @@ impl AcceleratorApp {
             };
             let (primary_fill, primary_text, primary_stroke) = if self.status.running {
                 (
-                    egui::Color32::from_rgb(59, 66, 74),
-                    egui::Color32::from_rgb(242, 244, 246),
-                    egui::Color32::from_rgb(198, 92, 74),
+                    egui::Color32::from_rgb(186, 63, 21),
+                    egui::Color32::from_rgb(248, 245, 243),
+                    egui::Color32::from_rgb(223, 109, 51),
                 )
             } else {
                 (
-                    egui::Color32::from_rgb(244, 184, 72),
-                    egui::Color32::from_rgb(28, 24, 17),
-                    egui::Color32::from_rgb(219, 162, 58),
+                    egui::Color32::from_rgb(229, 171, 66),
+                    egui::Color32::from_rgb(29, 24, 16),
+                    egui::Color32::from_rgb(214, 158, 59),
                 )
             };
 
-            ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+            ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);
             ui.vertical(|ui| {
-                ui.horizontal_centered(|ui| {
-                    if ui
-                        .add(filled_button(
-                            primary_label,
-                            primary_fill,
-                            primary_text,
-                            primary_stroke,
-                            egui::vec2(120.0, 34.0),
-                            !self.busy,
-                        ))
+                ui.columns(2, |columns| {
+                    let left_width = columns[0].available_width();
+                    if columns[0]
+                        .add_sized(
+                            [left_width, 84.0],
+                            launcher_primary_button(
+                                primary_label,
+                                primary_fill,
+                                primary_text,
+                                primary_stroke,
+                                egui::vec2(left_width, 84.0),
+                                !self.busy,
+                            ),
+                        )
                         .clicked()
                     {
                         let action = if self.status.running {
@@ -607,55 +699,43 @@ impl AcceleratorApp {
                         };
                         self.trigger_action(action);
                     }
+
+                    self.render_launcher_status_card(&mut columns[1]);
+                });
+
+                ui.horizontal(|ui| {
+                    let button_width = ((ui.available_width() - 24.0) / 3.0).max(120.0);
                     if ui
-                        .add(subtle_button("详情", egui::vec2(62.0, 34.0), true))
+                        .add(launcher_secondary_button(
+                            "详情",
+                            egui::vec2(button_width, 54.0),
+                            true,
+                        ))
                         .clicked()
                     {
                         self.navigate_to(ctx, UiPage::Details);
                     }
                     if ui
-                        .add(subtle_button("设置", egui::vec2(62.0, 34.0), true))
+                        .add(launcher_secondary_button(
+                            "设置",
+                            egui::vec2(button_width, 54.0),
+                            true,
+                        ))
                         .clicked()
                     {
                         self.navigate_to(ctx, UiPage::Config);
                     }
                     if ui
-                        .add(subtle_button("关于", egui::vec2(62.0, 34.0), true))
+                        .add(launcher_secondary_button(
+                            "关于",
+                            egui::vec2(button_width, 54.0),
+                            true,
+                        ))
                         .clicked()
                     {
                         self.navigate_to(ctx, UiPage::About);
                     }
                 });
-
-                ui.add_space(4.0);
-                let status_color = if self.status.last_error.is_some() {
-                    egui::Color32::from_rgb(235, 110, 90)
-                } else if self.busy {
-                    egui::Color32::from_rgb(243, 179, 74)
-                } else if self.status.running {
-                    egui::Color32::from_rgb(117, 201, 162)
-                } else {
-                    egui::Color32::from_rgb(213, 218, 223)
-                };
-                egui::Frame::new()
-                    .fill(egui::Color32::from_rgb(18, 21, 26))
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 47, 55)))
-                    .inner_margin(egui::Margin::symmetric(10, 6))
-                    .corner_radius(egui::CornerRadius::same(8))
-                    .show(ui, |ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(
-                                RichText::new("●")
-                                    .font(FontId::proportional(10.0))
-                                    .color(status_color),
-                            );
-                            ui.label(
-                                RichText::new(self.status_message())
-                                    .font(FontId::proportional(11.3))
-                                    .color(status_color),
-                            );
-                        });
-                    });
             });
         });
     }
@@ -1184,40 +1264,61 @@ impl eframe::App for AcceleratorApp {
             .frame(egui::Frame::new().fill(egui::Color32::from_rgb(17, 20, 24)))
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(10.0, 10.0);
+                self.render_window_title_bar(ui, ctx);
+                ui.add_space(10.0);
 
                 match self.current_page {
                     UiPage::Launcher => {
-                        ui.add_space(4.0);
                         egui::Frame::new()
-                            .fill(egui::Color32::from_rgb(17, 20, 24))
-                            .inner_margin(egui::Margin::same(6))
+                            .fill(egui::Color32::from_rgb(20, 24, 29))
+                            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
+                            .corner_radius(egui::CornerRadius::same(16))
+                            .inner_margin(egui::Margin::same(12))
                             .show(ui, |ui| {
                                 self.render_action_panel(ui, ctx);
                             });
                     }
                     UiPage::Details => {
-                        egui::ScrollArea::vertical()
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                self.render_page_header(ui, ctx, "状态详情");
-                                self.render_details_content(ui);
-                            });
+                        panel_frame(
+                            egui::Color32::from_rgb(20, 24, 29),
+                            egui::Color32::from_rgb(48, 54, 61),
+                        )
+                        .show(ui, |ui| {
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    self.render_page_header(ui, ctx, "状态详情");
+                                    self.render_details_content(ui);
+                                });
+                        });
                     }
                     UiPage::Config => {
-                        egui::ScrollArea::vertical()
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                self.render_page_header(ui, ctx, "设置");
-                                self.render_config_content(ui);
-                            });
+                        panel_frame(
+                            egui::Color32::from_rgb(20, 24, 29),
+                            egui::Color32::from_rgb(48, 54, 61),
+                        )
+                        .show(ui, |ui| {
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    self.render_page_header(ui, ctx, "设置");
+                                    self.render_config_content(ui);
+                                });
+                        });
                     }
                     UiPage::About => {
-                        egui::ScrollArea::vertical()
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                self.render_page_header(ui, ctx, "关于");
-                                self.render_about_content(ui);
-                            });
+                        panel_frame(
+                            egui::Color32::from_rgb(20, 24, 29),
+                            egui::Color32::from_rgb(48, 54, 61),
+                        )
+                        .show(ui, |ui| {
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    self.render_page_header(ui, ctx, "关于");
+                                    self.render_about_content(ui);
+                                });
+                        });
                     }
                 }
             });
@@ -1568,7 +1669,7 @@ fn install_theme(ctx: &egui::Context) {
     style.visuals.window_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(54, 60, 67));
     style.visuals.extreme_bg_color = egui::Color32::from_rgb(12, 16, 20);
     style.visuals.faint_bg_color = egui::Color32::from_rgb(21, 25, 30);
-    style.visuals.window_corner_radius = egui::CornerRadius::same(12);
+    style.visuals.window_corner_radius = egui::CornerRadius::same(18);
     style.visuals.menu_corner_radius = egui::CornerRadius::same(8);
     style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(8);
     style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(8);
@@ -1596,6 +1697,112 @@ fn panel_frame(fill: egui::Color32, stroke: egui::Color32) -> egui::Frame {
         .stroke(egui::Stroke::new(1.0, stroke))
         .inner_margin(egui::Margin::same(10))
         .corner_radius(egui::CornerRadius::same(12))
+}
+
+fn title_bar_button(
+    label: &'static str,
+    min_size: egui::Vec2,
+    danger: bool,
+    enabled: bool,
+) -> egui::Button<'static> {
+    let (fill, text, stroke) = if enabled {
+        if danger {
+            (
+                egui::Color32::from_rgba_unmultiplied(185, 72, 61, 30),
+                egui::Color32::from_rgb(244, 246, 248),
+                egui::Color32::from_rgb(94, 57, 54),
+            )
+        } else {
+            (
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 8),
+                egui::Color32::from_rgb(218, 223, 228),
+                egui::Color32::from_rgb(58, 64, 72),
+            )
+        }
+    } else {
+        (
+            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 4),
+            egui::Color32::from_rgb(112, 119, 127),
+            egui::Color32::from_rgb(42, 48, 56),
+        )
+    };
+
+    egui::Button::new(
+        RichText::new(label)
+            .font(FontId::proportional(13.0))
+            .strong()
+            .color(text),
+    )
+    .fill(fill)
+    .stroke(egui::Stroke::new(1.0, stroke))
+    .corner_radius(egui::CornerRadius::same(8))
+    .min_size(min_size)
+}
+
+fn launcher_primary_button(
+    label: &'static str,
+    fill: egui::Color32,
+    text: egui::Color32,
+    stroke: egui::Color32,
+    min_size: egui::Vec2,
+    enabled: bool,
+) -> egui::Button<'static> {
+    let (fill, text, stroke) = if enabled {
+        (fill, text, stroke)
+    } else {
+        (
+            fill.linear_multiply(0.62),
+            text.linear_multiply(0.88),
+            stroke.linear_multiply(0.72),
+        )
+    };
+
+    egui::Button::new(
+        RichText::new(label)
+            .font(FontId::proportional(20.0))
+            .strong()
+            .color(text),
+    )
+    .fill(fill)
+    .stroke(egui::Stroke::new(1.2, stroke))
+    .corner_radius(egui::CornerRadius::same(12))
+    .min_size(min_size)
+    .sense(if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    })
+}
+
+fn launcher_secondary_button(
+    label: &'static str,
+    min_size: egui::Vec2,
+    enabled: bool,
+) -> egui::Button<'static> {
+    let (fill, text, stroke) = if enabled {
+        (
+            egui::Color32::from_rgb(37, 42, 49),
+            egui::Color32::from_rgb(236, 240, 244),
+            egui::Color32::from_rgb(78, 84, 92),
+        )
+    } else {
+        (
+            egui::Color32::from_rgb(28, 32, 38),
+            egui::Color32::from_rgb(133, 140, 148),
+            egui::Color32::from_rgb(56, 61, 69),
+        )
+    };
+
+    egui::Button::new(
+        RichText::new(label)
+            .font(FontId::proportional(15.0))
+            .strong()
+            .color(text),
+    )
+    .fill(fill)
+    .stroke(egui::Stroke::new(1.0, stroke))
+    .corner_radius(egui::CornerRadius::same(12))
+    .min_size(min_size)
 }
 
 fn filled_button(
