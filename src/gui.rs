@@ -38,7 +38,7 @@ const ACTIVE_REPAINT_INTERVAL: Duration = Duration::from_millis(100);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_secs(5);
 const TRAY_REPAINT_INTERVAL: Duration = Duration::from_secs(15);
 const EMBEDDED_CJK_FONT: &[u8] = include_bytes!("../assets/fonts/DroidSansFallbackFull.ttf");
-const LAUNCHER_WINDOW_SIZE: [f32; 2] = [720.0, 290.0];
+const LAUNCHER_WINDOW_SIZE: [f32; 2] = [720.0, 260.0];
 const DETAILS_WINDOW_SIZE: [f32; 2] = [760.0, 520.0];
 const TITLE_BAR_HEIGHT: f32 = 52.0;
 
@@ -654,18 +654,18 @@ impl AcceleratorApp {
             .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 66, 74)))
             .inner_margin(egui::Margin {
                 left: 18,
-                right: 16,
-                top: 16,
-                bottom: 16,
+                right: 14,
+                top: 12,
+                bottom: 12,
             })
             .corner_radius(egui::CornerRadius::same(14))
             .show(ui, |ui| {
-                ui.set_min_size(egui::vec2(0.0, 84.0));
-                ui.vertical_centered_justified(|ui| {
+                ui.set_min_size(egui::vec2(0.0, 44.0));
+                ui.vertical(|ui| {
                     ui.horizontal(|ui| {
                         ui.label(
                             RichText::new("●")
-                                .font(FontId::proportional(14.0))
+                                .font(FontId::proportional(12.0))
                                 .color(accent),
                         );
                         ui.label(
@@ -675,15 +675,15 @@ impl AcceleratorApp {
                                 "异常" => "加速异常",
                                 _ => "等待启动",
                             })
-                            .font(FontId::proportional(18.0))
+                            .font(FontId::proportional(16.0))
                             .strong()
                             .color(accent),
                         );
                     });
-                    ui.add_space(6.0);
+                    ui.add_space(4.0);
                     ui.label(
                         RichText::new(detail_text)
-                            .font(FontId::proportional(12.4))
+                            .font(FontId::proportional(12.0))
                             .color(egui::Color32::from_rgb(206, 212, 218)),
                     );
                 });
@@ -692,7 +692,7 @@ impl AcceleratorApp {
         // Draw accent color bar on the left edge
         let bar_rect = egui::Rect::from_min_size(
             outer_rect.min,
-            egui::vec2(4.0, ui.min_rect().height().max(84.0)),
+            egui::vec2(4.0, ui.min_rect().height().max(44.0)),
         );
         ui.painter().rect_filled(
             bar_rect,
@@ -731,19 +731,19 @@ impl AcceleratorApp {
                 )
             };
 
-            ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);
+            ui.spacing_mut().item_spacing = egui::vec2(10.0, 10.0);
             ui.vertical(|ui| {
                 ui.columns(2, |columns| {
                     let left_width = columns[0].available_width();
                     if columns[0]
                         .add_sized(
-                            [left_width, 84.0],
+                            [left_width, 68.0],
                             launcher_primary_button(
                                 primary_label,
                                 primary_fill,
                                 primary_text,
                                 primary_stroke,
-                                egui::vec2(left_width, 84.0),
+                                egui::vec2(left_width, 68.0),
                                 !self.busy,
                             ),
                         )
@@ -761,11 +761,11 @@ impl AcceleratorApp {
                 });
 
                 ui.horizontal(|ui| {
-                    let button_width = ((ui.available_width() - 24.0) / 3.0).max(120.0);
+                    let button_width = ((ui.available_width() - 20.0) / 3.0).max(120.0);
                     if ui
                         .add(launcher_secondary_button(
-                            "# 详情",
-                            egui::vec2(button_width, 54.0),
+                            "详情",
+                            egui::vec2(button_width, 38.0),
                             true,
                         ))
                         .clicked()
@@ -774,8 +774,8 @@ impl AcceleratorApp {
                     }
                     if ui
                         .add(launcher_secondary_button(
-                            "* 设置",
-                            egui::vec2(button_width, 54.0),
+                            "设置",
+                            egui::vec2(button_width, 38.0),
                             true,
                         ))
                         .clicked()
@@ -784,8 +784,8 @@ impl AcceleratorApp {
                     }
                     if ui
                         .add(launcher_secondary_button(
-                            "i 关于",
-                            egui::vec2(button_width, 54.0),
+                            "关于",
+                            egui::vec2(button_width, 38.0),
                             true,
                         ))
                         .clicked()
@@ -1951,7 +1951,7 @@ fn launcher_primary_button(
 
     egui::Button::new(
         RichText::new(label)
-            .font(FontId::proportional(20.0))
+            .font(FontId::proportional(17.0))
             .strong()
             .color(text),
     )
@@ -1987,13 +1987,13 @@ fn launcher_secondary_button(
 
     egui::Button::new(
         RichText::new(label)
-            .font(FontId::proportional(15.0))
+            .font(FontId::proportional(13.5))
             .strong()
             .color(text),
     )
     .fill(fill)
     .stroke(egui::Stroke::new(1.0, stroke))
-    .corner_radius(egui::CornerRadius::same(14))
+    .corner_radius(egui::CornerRadius::same(10))
     .min_size(min_size)
 }
 
