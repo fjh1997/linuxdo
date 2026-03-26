@@ -307,9 +307,14 @@ enum UiPage {
     About,
 }
 
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(target_os = "linux")]
 struct TrayState {
     control_tx: mpsc::Sender<TrayVisibilityCommand>,
+}
+
+#[cfg(target_os = "windows")]
+struct TrayState {
+    tray_icon: tray_icon::TrayIcon,
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
@@ -318,7 +323,7 @@ enum TrayCommand {
     Quit,
 }
 
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(target_os = "linux")]
 enum TrayVisibilityCommand {
     Show,
     Hide,
@@ -1287,11 +1292,11 @@ impl AcceleratorApp {
     #[cfg(target_os = "windows")]
     fn minimize_to_tray(&mut self, ctx: &egui::Context) {
         if let Some(tray) = &self.tray {
-            let _ = tray.control_tx.send(TrayVisibilityCommand::Show);
+            let _ = tray.tray_icon.set_visible(true);
             self.hidden_to_tray = true;
             self.last_minimized = true;
             if let Some(hwnd) = self.window_handle {
-                crate::platform::hide_app_window(hwnd);
+                let _ = crate::platform::hide_app_window(hwnd);
             } else {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
             }
@@ -1379,10 +1384,10 @@ impl AcceleratorApp {
         self.hidden_to_tray = false;
         self.last_minimized = true;
         if let Some(tray) = &self.tray {
-            let _ = tray.control_tx.send(TrayVisibilityCommand::Hide);
+            let _ = tray.tray_icon.set_visible(false);
         }
         if let Some(hwnd) = self.window_handle {
-            crate::platform::restore_app_window(hwnd);
+            let _ = crate::platform::restore_app_window(hwnd);
         } else {
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -1397,7 +1402,7 @@ impl AcceleratorApp {
                 TrayCommand::Restore => self.restore_from_tray(ctx),
                 TrayCommand::Quit => {
                     if let Some(tray) = &self.tray {
-                        let _ = tray.control_tx.send(TrayVisibilityCommand::Quit);
+                        let _ = tray.tray_icon.set_visible(false);
                     }
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -2150,7 +2155,6 @@ fn build_windows_tray_state(
     ctx: &egui::Context,
 ) -> (Option<TrayState>, Receiver<TrayCommand>) {
     let (event_tx, event_rx) = mpsc::channel();
-    let (control_tx, control_rx) = mpsc::channel::<TrayVisibilityCommand>();
 
     let menu = Menu::new();
     let show_item = MenuItem::with_id("tray-show", "打开窗口", true, None);
@@ -2211,26 +2215,7 @@ fn build_windows_tray_state(
         _ => {}
     }));
 
-    // Background thread to handle show/hide/quit commands for the tray icon
-    thread::spawn(move || {
-        loop {
-            match control_rx.recv() {
-                Ok(TrayVisibilityCommand::Show) => {
-                    let _ = tray_icon.set_visible(true);
-                }
-                Ok(TrayVisibilityCommand::Hide) => {
-                    let _ = tray_icon.set_visible(false);
-                }
-                Ok(TrayVisibilityCommand::Quit) => {
-                    let _ = tray_icon.set_visible(false);
-                    break;
-                }
-                Err(_) => break,
-            }
-        }
-    });
-
-    (Some(TrayState { control_tx }), event_rx)
+    (Some(TrayState { tray_icon }), event_rx)
 }
 
 #[cfg(target_os = "linux")]
