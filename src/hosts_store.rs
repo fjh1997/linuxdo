@@ -264,7 +264,18 @@ fn write_hosts_content_inner(
 
     let result = (|| -> Result<()> {
         write_temp_file(&temp_path, new_content)?;
-        replace_file_atomically(&temp_path, path)?;
+        if let Err(error) = replace_file_atomically(&temp_path, path) {
+            write_hosts_content_without_replace(path, new_content, desired_attributes)
+                .with_context(|| {
+                    format!(
+                        "failed to update hosts file {} after atomic replace fallback: {error:#}",
+                        path.display()
+                    )
+                })?;
+            replaced = true;
+            let _ = cleanup_temp_file(&temp_path);
+            return Ok(());
+        }
         replaced = true;
         restore_file_attributes(path, desired_attributes)?;
         Ok(())
@@ -465,7 +476,7 @@ fn should_retry_windows_replace_error(error: &std::io::Error) -> bool {
 
 #[cfg(windows)]
 fn should_retry_windows_replace_error_code(code: Option<i32>) -> bool {
-    matches!(code, Some(5 | 32 | 33))
+    matches!(code, Some(5 | 32 | 33 | 1175))
 }
 
 #[cfg(windows)]

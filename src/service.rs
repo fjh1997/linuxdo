@@ -177,8 +177,9 @@ pub fn helper_stop(config_path: Option<PathBuf>) -> Result<()> {
         if let Some(issue) = terminate_running_service(&paths)? {
             issues.push(issue);
         }
-        if let Err(error) = remove_hosts(&paths) {
-            issues.push(format!("failed to clean managed hosts block: {error:#}"));
+        let (hosts_message, hosts_warning) = restore_hosts_after_stop(&paths);
+        if let Some(warning) = hosts_warning {
+            issues.push(warning);
         }
         if let Err(error) = remove_loopback_alias(&config) {
             issues.push(format!("failed to remove loopback alias: {error:#}"));
@@ -186,11 +187,12 @@ pub fn helper_stop(config_path: Option<PathBuf>) -> Result<()> {
         if let Err(error) = state::clear_pid(&paths) {
             issues.push(format!("failed to clear pid file: {error:#}"));
         }
+        let _ = flush_dns_cache();
 
         let status_message = if issues.is_empty() {
-            "加速已停止".to_string()
+            format!("加速已停止，{hosts_message}")
         } else {
-            "已执行停止请求，但存在残留清理问题".to_string()
+            format!("已执行停止请求，但存在残留清理问题：{hosts_message}")
         };
         if let Err(error) = state::mark_stopped(&paths, &status_message) {
             issues.push(format!("failed to update service state: {error:#}"));
@@ -457,6 +459,63 @@ fn cleanup_hosts_state(paths: &AppPaths) -> (String, Option<String>) {
                 "hosts 未清理".to_string(),
                 Some(format!(
                     "hosts backup state is inconsistent; fallback removal failed: {error:#}"
+                )),
+            ),
+        },
+    }
+}
+
+fn restore_hosts_after_stop(paths: &AppPaths) -> (String, Option<String>) {
+    match backup_state(paths) {
+        BackupState::Ready => match validate_hosts_backup_file(paths) {
+            Ok(()) => match restore_hosts_file(paths) {
+                Ok(()) => ("hosts 已恢复为备份".to_string(), None),
+                Err(error) => match remove_hosts(paths) {
+                    Ok(()) => (
+                        "hosts 备份恢复失败，已退化为仅清理托管 hosts 规则".to_string(),
+                        Some(format!(
+                            "failed to restore original hosts backup while stopping: {error:#}; fallback removal cleaned the managed hosts block"
+                        )),
+                    ),
+                    Err(remove_error) => (
+                        "hosts 未恢复".to_string(),
+                        Some(format!(
+                            "failed to restore original hosts backup while stopping: {error:#}; fallback removal also failed: {remove_error:#}"
+                        )),
+                    ),
+                },
+            },
+            Err(validation_error) => match remove_hosts(paths) {
+                Ok(()) => (
+                    "hosts 备份异常，已退化为仅清理托管 hosts 规则".to_string(),
+                    Some(format!(
+                        "hosts backup is invalid while stopping: {validation_error:#}; managed hosts block was removed instead"
+                    )),
+                ),
+                Err(remove_error) => (
+                    "hosts 未恢复".to_string(),
+                    Some(format!(
+                        "hosts backup is invalid while stopping: {validation_error:#}; fallback removal failed: {remove_error:#}"
+                    )),
+                ),
+            },
+        },
+        BackupState::Missing => match remove_hosts(paths) {
+            Ok(()) => ("已清理托管 hosts 规则".to_string(), None),
+            Err(error) => (
+                "hosts 未恢复".to_string(),
+                Some(format!("failed to clean managed hosts block while stopping: {error:#}")),
+            ),
+        },
+        BackupState::Inconsistent => match remove_hosts(paths) {
+            Ok(()) => (
+                "hosts 备份状态异常，已退化为仅清理托管 hosts 规则".to_string(),
+                Some("hosts backup state is inconsistent while stopping; removed only the managed hosts block".to_string()),
+            ),
+            Err(error) => (
+                "hosts 未恢复".to_string(),
+                Some(format!(
+                    "hosts backup state is inconsistent while stopping; fallback removal failed: {error:#}"
                 )),
             ),
         },

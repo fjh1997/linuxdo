@@ -425,7 +425,7 @@ impl AcceleratorApp {
 
     fn maintenance_hint(&self) -> &'static str {
         if self.status.running {
-            return "恢复 hosts 会先自动停止加速再恢复；彻底恢复会自动停止并清理。";
+            return "停止加速时会自动恢复 hosts；彻底恢复会自动停止并清理。";
         }
 
         match self.hosts_backup_state {
@@ -580,7 +580,7 @@ impl AcceleratorApp {
             ui.add_space(8.0);
 
             let primary_label = if self.status.running {
-                "停止加速"
+                "停止加速并恢复"
             } else {
                 "开始加速"
             };
@@ -1111,7 +1111,6 @@ impl eframe::App for AcceleratorApp {
                                 ui.columns(2, |columns| {
                                     columns[0].spacing_mut().item_spacing = egui::vec2(10.0, 10.0);
                                     self.render_action_panel(&mut columns[0], ctx);
-                                    self.render_maintenance_panel(&mut columns[0]);
                                     self.render_status_panel(&mut columns[0]);
 
                                     columns[1].spacing_mut().item_spacing = egui::vec2(10.0, 10.0);
@@ -1122,7 +1121,6 @@ impl eframe::App for AcceleratorApp {
                                 ui.spacing_mut().item_spacing = egui::vec2(10.0, 10.0);
                                 self.render_action_panel(ui, ctx);
                                 self.render_scope_panel(ui);
-                                self.render_maintenance_panel(ui);
                                 self.render_status_panel(ui);
                                 self.render_tips_panel(ui);
                             }
@@ -1238,7 +1236,7 @@ impl GuiAction {
     fn pending_message(self) -> &'static str {
         match self {
             Self::Start => "正在申请权限并启动加速...",
-            Self::Stop => "正在停止加速...",
+            Self::Stop => "正在停止加速并恢复 hosts...",
             Self::RestoreHosts => "正在恢复 hosts 备份...",
             Self::Cleanup => "正在恢复原始状态...",
         }
@@ -1272,7 +1270,7 @@ impl GuiAction {
     fn fallback_success_message(self) -> &'static str {
         match self {
             Self::Start => "加速已启动，可以直接最小化窗口",
-            Self::Stop => "加速已停止",
+            Self::Stop => "加速已停止，hosts 已恢复",
             Self::RestoreHosts => "hosts 已恢复为备份",
             Self::Cleanup => "已恢复原始状态",
         }
@@ -1355,7 +1353,7 @@ fn execute_action(config_path: &Path, action: GuiAction) -> Result<String> {
                 return Ok("加速已启动，可以直接最小化窗口".to_string());
             }
             GuiAction::Stop if !status.running => {
-                return Ok("加速已停止".to_string());
+                return Ok(status.status_text);
             }
             GuiAction::RestoreHosts | GuiAction::Cleanup => {
                 if let Some(error) = status.last_error.clone() {
