@@ -41,6 +41,7 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const ACTIVE_REPAINT_INTERVAL: Duration = Duration::from_millis(100);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_secs(5);
 const TRAY_REPAINT_INTERVAL: Duration = Duration::from_secs(15);
+const EMBEDDED_CJK_FONT: &[u8] = include_bytes!("../assets/fonts/DroidSansFallbackFull.ttf");
 
 pub fn run(config_path: PathBuf) -> Result<()> {
     let native_options = eframe::NativeOptions {
@@ -1270,18 +1271,84 @@ fn format_error_chain(error: &Error) -> String {
 
 fn install_fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::empty();
-    fonts.font_data.insert(
-        "linuxdo_cjk".to_string(),
-        egui::FontData::from_static(include_bytes!("../assets/fonts/DroidSansFallbackFull.ttf"))
-            .into(),
-    );
+    let (font_name, font_data) = load_ui_font();
+    fonts.font_data.insert(font_name.clone(), font_data.into());
     if let Some(family) = fonts.families.get_mut(&FontFamily::Proportional) {
-        family.insert(0, "linuxdo_cjk".to_string());
+        family.insert(0, font_name.clone());
     }
     if let Some(family) = fonts.families.get_mut(&FontFamily::Monospace) {
-        family.insert(0, "linuxdo_cjk".to_string());
+        family.insert(0, font_name);
     }
     ctx.set_fonts(fonts);
+}
+
+fn load_ui_font() -> (String, egui::FontData) {
+    if let Some((name, data)) = load_system_ui_font() {
+        return (name, egui::FontData::from_owned(data));
+    }
+
+    (
+        "linuxdo_cjk_embedded".to_string(),
+        egui::FontData::from_static(EMBEDDED_CJK_FONT),
+    )
+}
+
+fn load_system_ui_font() -> Option<(String, Vec<u8>)> {
+    let mut database = fontdb::Database::new();
+    database.load_system_fonts();
+
+    for family_name in preferred_system_font_families() {
+        let query = fontdb::Query {
+            families: &[fontdb::Family::Name(family_name)],
+            ..fontdb::Query::default()
+        };
+        let Some(id) = database.query(&query) else {
+            continue;
+        };
+        let Some(info) = database.face(id) else {
+            continue;
+        };
+        let font_name = info
+            .families
+            .first()
+            .map(|(name, _)| name.clone())
+            .unwrap_or_else(|| family_name.to_string());
+        let Some(data) = database.with_face_data(id, |data, _| data.to_vec()) else {
+            continue;
+        };
+        if data.len() <= EMBEDDED_CJK_FONT.len() {
+            return Some((font_name, data));
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn preferred_system_font_families() -> &'static [&'static str] {
+    &[
+        "Microsoft YaHei UI",
+        "Microsoft YaHei",
+        "SimHei",
+        "Segoe UI",
+    ]
+}
+
+#[cfg(target_os = "macos")]
+fn preferred_system_font_families() -> &'static [&'static str] {
+    &["PingFang SC", "Hiragino Sans GB", "Helvetica Neue"]
+}
+
+#[cfg(target_os = "linux")]
+fn preferred_system_font_families() -> &'static [&'static str] {
+    &[
+        "Noto Sans CJK SC",
+        "Noto Sans SC",
+        "WenQuanYi Micro Hei",
+        "Source Han Sans SC",
+        "Droid Sans Fallback",
+        "Noto Sans",
+    ]
 }
 
 fn install_theme(ctx: &egui::Context) {

@@ -70,6 +70,7 @@ toml = "0.8"
 time = { version = "0.3", default-features = false, features = ["std"] }
 x509-parser = "0.16"
 md5 = "0.7"
+fontdb = "0.23"
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 eframe = { version = "0.31", default-features = false, features = ["glow"] }
