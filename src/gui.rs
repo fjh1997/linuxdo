@@ -38,9 +38,9 @@ const ACTIVE_REPAINT_INTERVAL: Duration = Duration::from_millis(100);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_secs(5);
 const TRAY_REPAINT_INTERVAL: Duration = Duration::from_secs(15);
 const EMBEDDED_CJK_FONT: &[u8] = include_bytes!("../assets/fonts/DroidSansFallbackFull.ttf");
-const LAUNCHER_WINDOW_SIZE: [f32; 2] = [720.0, 250.0];
+const LAUNCHER_WINDOW_SIZE: [f32; 2] = [720.0, 260.0];
 const DETAILS_WINDOW_SIZE: [f32; 2] = [760.0, 520.0];
-const TITLE_BAR_HEIGHT: f32 = 48.0;
+const TITLE_BAR_HEIGHT: f32 = 52.0;
 
 pub fn run(config_path: PathBuf) -> Result<()> {
     let native_options = eframe::NativeOptions {
@@ -288,6 +288,12 @@ struct AcceleratorApp {
     #[cfg(target_os = "macos")]
     last_minimized: bool,
     #[cfg(target_os = "windows")]
+    tray: Option<TrayState>,
+    #[cfg(target_os = "windows")]
+    tray_rx: Receiver<TrayCommand>,
+    #[cfg(target_os = "windows")]
+    window_handle: Option<isize>,
+    #[cfg(target_os = "windows")]
     hidden_to_tray: bool,
     #[cfg(target_os = "windows")]
     last_minimized: bool,
@@ -301,19 +307,20 @@ enum UiPage {
     About,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 struct TrayState {
     control_tx: mpsc::Sender<TrayVisibilityCommand>,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 enum TrayCommand {
     Restore,
     Quit,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 enum TrayVisibilityCommand {
+    Show,
     Hide,
     Quit,
 }
@@ -343,6 +350,8 @@ impl AcceleratorApp {
         if let Some(hwnd) = window_handle {
             let _ = apply_app_window_icon(hwnd);
         }
+        #[cfg(target_os = "windows")]
+        let (tray, tray_rx) = build_windows_tray_state(&cc.egui_ctx);
         Self {
             config_path,
             config,
@@ -371,6 +380,12 @@ impl AcceleratorApp {
             hidden_to_tray: false,
             #[cfg(target_os = "macos")]
             last_minimized: false,
+            #[cfg(target_os = "windows")]
+            tray,
+            #[cfg(target_os = "windows")]
+            tray_rx,
+            #[cfg(target_os = "windows")]
+            window_handle,
             #[cfg(target_os = "windows")]
             hidden_to_tray: false,
             #[cfg(target_os = "windows")]
@@ -530,24 +545,26 @@ impl AcceleratorApp {
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(10.0, 0.0);
-                ui.add_space(8.0);
-                ui.add(egui::Image::new((self.logo.id(), egui::vec2(28.0, 28.0))));
+                ui.add_space(12.0);
+                ui.add(egui::Image::new((self.logo.id(), egui::vec2(30.0, 30.0))));
                 ui.label(
                     RichText::new(APP_WINDOW_TITLE)
-                        .font(FontId::proportional(16.0))
+                        .font(FontId::proportional(17.0))
                         .strong()
                         .color(egui::Color32::from_rgb(244, 245, 247)),
                 );
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(6.0);
                     if ui
-                        .add(title_bar_button("×", egui::vec2(34.0, 26.0), true, true))
+                        .add(title_bar_button("×", egui::vec2(38.0, 28.0), true, true))
                         .clicked()
                     {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
+                    ui.add_space(2.0);
                     if ui
-                        .add(title_bar_button("—", egui::vec2(34.0, 26.0), false, true))
+                        .add(title_bar_button("—", egui::vec2(38.0, 28.0), false, true))
                         .clicked()
                     {
                         self.minimize_to_tray(ctx);
@@ -572,44 +589,44 @@ impl AcceleratorApp {
     fn render_brand_banner(&self, ui: &mut egui::Ui, title: &str, summary: &str) {
         let (headline, accent) = self.headline_status();
         egui::Frame::new()
-            .fill(egui::Color32::from_rgb(24, 28, 34))
-            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 61, 68)))
-            .inner_margin(egui::Margin::symmetric(14, 12))
-            .corner_radius(egui::CornerRadius::same(12))
+            .fill(egui::Color32::from_rgb(22, 26, 32))
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 56, 64)))
+            .inner_margin(egui::Margin::symmetric(16, 14))
+            .corner_radius(egui::CornerRadius::same(14))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.add(egui::Image::new((self.logo.id(), egui::vec2(30.0, 30.0))));
+                    ui.add(egui::Image::new((self.logo.id(), egui::vec2(32.0, 32.0))));
                     ui.vertical(|ui| {
                         ui.horizontal_wrapped(|ui| {
                             ui.label(
                                 RichText::new(title)
-                                    .font(FontId::proportional(16.5))
+                                    .font(FontId::proportional(17.0))
                                     .strong()
                                     .color(egui::Color32::from_rgb(244, 245, 247)),
                             );
                             ui.label(
                                 RichText::new(format!("v{APP_VERSION}"))
                                     .font(FontId::proportional(10.5))
-                                    .color(egui::Color32::from_rgb(149, 159, 168)),
+                                    .color(egui::Color32::from_rgb(140, 150, 160)),
                             );
                         });
                         ui.label(
                             RichText::new(summary)
-                                .font(FontId::proportional(11.0))
-                                .color(egui::Color32::from_rgb(159, 168, 176)),
+                                .font(FontId::proportional(11.5))
+                                .color(egui::Color32::from_rgb(155, 164, 172)),
                         );
                     });
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         egui::Frame::new()
-                            .fill(accent.linear_multiply(0.12))
-                            .stroke(egui::Stroke::new(1.0, accent.linear_multiply(0.45)))
-                            .inner_margin(egui::Margin::symmetric(10, 4))
+                            .fill(accent.linear_multiply(0.14))
+                            .stroke(egui::Stroke::new(1.0, accent.linear_multiply(0.5)))
+                            .inner_margin(egui::Margin::symmetric(12, 5))
                             .corner_radius(egui::CornerRadius::same(255))
                             .show(ui, |ui| {
                                 ui.label(
                                     RichText::new(headline)
-                                        .font(FontId::proportional(10.5))
+                                        .font(FontId::proportional(11.0))
                                         .strong()
                                         .color(accent),
                                 );
@@ -623,11 +640,17 @@ impl AcceleratorApp {
         let (headline, accent) = self.headline_status();
         let detail_text = format!("状态: {}", self.status_message());
 
+        let outer_rect = ui.available_rect_before_wrap();
         egui::Frame::new()
-            .fill(egui::Color32::from_rgb(32, 36, 43))
-            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(68, 74, 82)))
-            .inner_margin(egui::Margin::same(16))
-            .corner_radius(egui::CornerRadius::same(12))
+            .fill(egui::Color32::from_rgb(30, 34, 41))
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 66, 74)))
+            .inner_margin(egui::Margin {
+                left: 18,
+                right: 16,
+                top: 16,
+                bottom: 16,
+            })
+            .corner_radius(egui::CornerRadius::same(14))
             .show(ui, |ui| {
                 ui.set_min_size(egui::vec2(0.0, 84.0));
                 ui.vertical_centered_justified(|ui| {
@@ -649,7 +672,7 @@ impl AcceleratorApp {
                             .color(accent),
                         );
                     });
-                    ui.add_space(4.0);
+                    ui.add_space(6.0);
                     ui.label(
                         RichText::new(detail_text)
                             .font(FontId::proportional(12.4))
@@ -657,12 +680,28 @@ impl AcceleratorApp {
                     );
                 });
             });
+
+        // Draw accent color bar on the left edge
+        let bar_rect = egui::Rect::from_min_size(
+            outer_rect.min,
+            egui::vec2(4.0, ui.min_rect().height().max(84.0)),
+        );
+        ui.painter().rect_filled(
+            bar_rect,
+            egui::CornerRadius {
+                nw: 14,
+                sw: 14,
+                ne: 0,
+                se: 0,
+            },
+            accent,
+        );
     }
 
     fn render_action_panel(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         panel_frame(
-            egui::Color32::from_rgb(28, 32, 38),
-            egui::Color32::from_rgb(54, 60, 68),
+            egui::Color32::from_rgb(26, 30, 36),
+            egui::Color32::from_rgb(50, 56, 64),
         )
         .show(ui, |ui| {
             let primary_label = if self.status.running {
@@ -717,7 +756,7 @@ impl AcceleratorApp {
                     let button_width = ((ui.available_width() - 24.0) / 3.0).max(120.0);
                     if ui
                         .add(launcher_secondary_button(
-                            "详情",
+                            "# 详情",
                             egui::vec2(button_width, 54.0),
                             true,
                         ))
@@ -727,7 +766,7 @@ impl AcceleratorApp {
                     }
                     if ui
                         .add(launcher_secondary_button(
-                            "设置",
+                            "* 设置",
                             egui::vec2(button_width, 54.0),
                             true,
                         ))
@@ -737,7 +776,7 @@ impl AcceleratorApp {
                     }
                     if ui
                         .add(launcher_secondary_button(
-                            "关于",
+                            "i 关于",
                             egui::vec2(button_width, 54.0),
                             true,
                         ))
@@ -773,27 +812,27 @@ impl AcceleratorApp {
     fn render_page_header(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, title: &str) {
         ui.horizontal(|ui| {
             if ui
-                .add(subtle_button("← 返回", egui::vec2(76.0, 28.0), true))
+                .add(subtle_button("← 返回", egui::vec2(80.0, 30.0), true))
                 .clicked()
             {
                 self.navigate_to(ctx, UiPage::Launcher);
             }
-            ui.add_space(4.0);
+            ui.add_space(6.0);
             ui.vertical(|ui| {
                 ui.label(
                     RichText::new(title)
-                        .font(FontId::proportional(15.5))
+                        .font(FontId::proportional(16.0))
                         .strong()
                         .color(egui::Color32::from_rgb(244, 245, 247)),
                 );
                 ui.label(
-                    RichText::new("Linux.do Accelerator · 桌面工具")
-                        .font(FontId::proportional(10.3))
-                        .color(egui::Color32::from_rgb(155, 164, 172)),
+                    RichText::new("Linux.do Accelerator")
+                        .font(FontId::proportional(10.5))
+                        .color(egui::Color32::from_rgb(140, 150, 160)),
                 );
             });
         });
-        ui.add_space(6.0);
+        ui.add_space(8.0);
     }
 
     fn navigate_to(&mut self, ctx: &egui::Context, page: UiPage) {
@@ -823,33 +862,41 @@ impl AcceleratorApp {
 
     fn render_status_panel(&self, ui: &mut egui::Ui) {
         panel_frame(
-            egui::Color32::from_rgb(24, 28, 34),
-            egui::Color32::from_rgb(55, 61, 68),
+            egui::Color32::from_rgb(22, 26, 32),
+            egui::Color32::from_rgb(50, 56, 64),
         )
         .show(ui, |ui| {
             ui.label(
                 RichText::new("状态与日志")
-                    .font(FontId::proportional(12.2))
+                    .font(FontId::proportional(13.0))
                     .strong()
                     .color(egui::Color32::from_rgb(243, 179, 74)),
             );
-            ui.add_space(3.0);
+            ui.add_space(2.0);
+            ui.painter().line_segment(
+                [
+                    ui.cursor().left_top(),
+                    ui.cursor().left_top() + egui::vec2(ui.available_width(), 0.0),
+                ],
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 56, 64)),
+            );
+            ui.add_space(6.0);
             egui::Frame::new()
-                .fill(egui::Color32::from_rgb(19, 22, 27))
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(45, 51, 58)))
-                .inner_margin(egui::Margin::symmetric(10, 8))
-                .corner_radius(egui::CornerRadius::same(8))
+                .fill(egui::Color32::from_rgb(17, 20, 25))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 48, 56)))
+                .inner_margin(egui::Margin::symmetric(12, 10))
+                .corner_radius(egui::CornerRadius::same(10))
                 .show(ui, |ui| {
                     ui.horizontal_wrapped(|ui| {
                         ui.label(
                             RichText::new("当前状态")
-                                .font(FontId::proportional(10.6))
+                                .font(FontId::proportional(11.0))
                                 .strong()
-                                .color(egui::Color32::from_rgb(171, 180, 187)),
+                                .color(egui::Color32::from_rgb(160, 170, 178)),
                         );
                         ui.label(
                             RichText::new(self.status.status_text.as_str())
-                                .font(FontId::proportional(11.6))
+                                .font(FontId::proportional(12.0))
                                 .color(egui::Color32::from_rgb(232, 236, 239)),
                         );
                     });
@@ -857,9 +904,9 @@ impl AcceleratorApp {
             ui.add_space(6.0);
             ui.label(
                 RichText::new("最近错误")
-                    .font(FontId::proportional(10.6))
+                    .font(FontId::proportional(11.0))
                     .strong()
-                    .color(egui::Color32::from_rgb(171, 180, 187)),
+                    .color(egui::Color32::from_rgb(160, 170, 178)),
             );
             let details = self
                 .status
@@ -868,7 +915,7 @@ impl AcceleratorApp {
                 .unwrap_or("当前没有错误。运行异常时会直接显示真实原因。");
             ui.label(
                 RichText::new(details)
-                    .font(FontId::proportional(11.4))
+                    .font(FontId::proportional(11.8))
                     .color(if self.status.last_error.is_some() {
                         egui::Color32::from_rgb(235, 110, 90)
                     } else {
@@ -878,38 +925,53 @@ impl AcceleratorApp {
             ui.add_space(7.0);
             ui.label(
                 RichText::new("最近操作日志")
-                    .font(FontId::proportional(10.6))
+                    .font(FontId::proportional(11.0))
                     .strong()
-                    .color(egui::Color32::from_rgb(171, 180, 187)),
+                    .color(egui::Color32::from_rgb(160, 170, 178)),
             );
-            egui::ScrollArea::vertical()
-                .max_height(228.0)
-                .auto_shrink([false, false])
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgb(14, 17, 21))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(38, 44, 52)))
+                .inner_margin(egui::Margin::symmetric(10, 8))
+                .corner_radius(egui::CornerRadius::same(8))
                 .show(ui, |ui| {
-                    for line in self.recent_logs_or_placeholder() {
-                        ui.label(
-                            RichText::new(line)
-                                .font(FontId::monospace(10.2))
-                                .color(egui::Color32::from_rgb(204, 210, 216)),
-                        );
-                    }
+                    egui::ScrollArea::vertical()
+                        .max_height(228.0)
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            for line in self.recent_logs_or_placeholder() {
+                                ui.label(
+                                    RichText::new(line)
+                                        .font(FontId::monospace(10.5))
+                                        .color(egui::Color32::from_rgb(190, 198, 206)),
+                                );
+                            }
+                        });
                 });
         });
     }
 
     fn render_scope_panel(&self, ui: &mut egui::Ui) {
         panel_frame(
-            egui::Color32::from_rgb(24, 28, 34),
-            egui::Color32::from_rgb(55, 61, 68),
+            egui::Color32::from_rgb(22, 26, 32),
+            egui::Color32::from_rgb(50, 56, 64),
         )
         .show(ui, |ui| {
             ui.label(
                 RichText::new("接管范围")
-                    .font(FontId::proportional(12.5))
+                    .font(FontId::proportional(13.0))
                     .strong()
                     .color(egui::Color32::from_rgb(243, 179, 74)),
             );
-            ui.add_space(4.0);
+            ui.add_space(2.0);
+            ui.painter().line_segment(
+                [
+                    ui.cursor().left_top(),
+                    ui.cursor().left_top() + egui::vec2(ui.available_width(), 0.0),
+                ],
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 56, 64)),
+            );
+            ui.add_space(6.0);
             let hosts_count = self.config.hosts_domains().len().to_string();
             let doh_count = self.config.doh_endpoints.len().to_string();
             let cert_count = self.config.certificate_domains.len().to_string();
@@ -935,17 +997,25 @@ impl AcceleratorApp {
 
     fn render_tips_panel(&self, ui: &mut egui::Ui) {
         panel_frame(
-            egui::Color32::from_rgb(24, 28, 34),
-            egui::Color32::from_rgb(55, 61, 68),
+            egui::Color32::from_rgb(22, 26, 32),
+            egui::Color32::from_rgb(50, 56, 64),
         )
         .show(ui, |ui| {
             ui.label(
                 RichText::new("提示")
-                    .font(FontId::proportional(12.5))
+                    .font(FontId::proportional(13.0))
                     .strong()
                     .color(egui::Color32::from_rgb(243, 179, 74)),
             );
             ui.add_space(2.0);
+            ui.painter().line_segment(
+                [
+                    ui.cursor().left_top(),
+                    ui.cursor().left_top() + egui::vec2(ui.available_width(), 0.0),
+                ],
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 56, 64)),
+            );
+            ui.add_space(6.0);
             ui.label(
                 RichText::new(
                     "DoH、接管域名和证书 SAN 都放在同一个 linuxdo-accelerator.toml 里，安装后直接改这一份即可。",
@@ -981,8 +1051,8 @@ impl AcceleratorApp {
             ui.columns(2, |columns| {
                 columns[0].spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
                 panel_frame(
-                    egui::Color32::from_rgb(24, 28, 34),
-                    egui::Color32::from_rgb(55, 61, 68),
+                    egui::Color32::from_rgb(22, 26, 32),
+                    egui::Color32::from_rgb(50, 56, 64),
                 )
                 .show(&mut columns[0], |ui| {
                     ui.label(
@@ -1008,8 +1078,8 @@ impl AcceleratorApp {
 
                 columns[1].spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
                 panel_frame(
-                    egui::Color32::from_rgb(24, 28, 34),
-                    egui::Color32::from_rgb(55, 61, 68),
+                    egui::Color32::from_rgb(22, 26, 32),
+                    egui::Color32::from_rgb(50, 56, 64),
                 )
                 .show(&mut columns[1], |ui| {
                     ui.label(
@@ -1045,8 +1115,8 @@ impl AcceleratorApp {
             });
         } else {
             panel_frame(
-                egui::Color32::from_rgb(24, 28, 34),
-                egui::Color32::from_rgb(55, 61, 68),
+                egui::Color32::from_rgb(22, 26, 32),
+                egui::Color32::from_rgb(50, 56, 64),
             )
             .show(ui, |ui| {
                 detail_value_row(ui, "主配置", &self.config_path.display().to_string());
@@ -1073,8 +1143,8 @@ impl AcceleratorApp {
             ui.columns(2, |columns| {
                 columns[0].spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
                 panel_frame(
-                    egui::Color32::from_rgb(24, 28, 34),
-                    egui::Color32::from_rgb(55, 61, 68),
+                    egui::Color32::from_rgb(22, 26, 32),
+                    egui::Color32::from_rgb(50, 56, 64),
                 )
                 .show(&mut columns[0], |ui| {
                     ui.label(
@@ -1091,8 +1161,8 @@ impl AcceleratorApp {
 
                 columns[1].spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
                 panel_frame(
-                    egui::Color32::from_rgb(24, 28, 34),
-                    egui::Color32::from_rgb(55, 61, 68),
+                    egui::Color32::from_rgb(22, 26, 32),
+                    egui::Color32::from_rgb(50, 56, 64),
                 )
                 .show(&mut columns[1], |ui| {
                     ui.label(
@@ -1116,8 +1186,8 @@ impl AcceleratorApp {
             });
         } else {
             panel_frame(
-                egui::Color32::from_rgb(24, 28, 34),
-                egui::Color32::from_rgb(55, 61, 68),
+                egui::Color32::from_rgb(22, 26, 32),
+                egui::Color32::from_rgb(50, 56, 64),
             )
             .show(ui, |ui| {
                 detail_value_row(ui, "名称", "Linux.do Accelerator");
@@ -1216,36 +1286,39 @@ impl AcceleratorApp {
 
     #[cfg(target_os = "windows")]
     fn minimize_to_tray(&mut self, ctx: &egui::Context) {
-        match spawn_tray_shell(&self.config_path) {
-            Ok(()) => {
-                self.hidden_to_tray = true;
-                self.last_minimized = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            }
-            Err(error) => {
-                self.hidden_to_tray = false;
-                self.last_minimized = true;
-                self.feedback = format!("托盘最小化失败，已退回系统最小化: {error}");
+        if let Some(tray) = &self.tray {
+            let _ = tray.control_tx.send(TrayVisibilityCommand::Show);
+            self.hidden_to_tray = true;
+            self.last_minimized = true;
+            if let Some(hwnd) = self.window_handle {
+                crate::platform::hide_app_window(hwnd);
+            } else {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                ctx.request_repaint();
             }
+            ctx.request_repaint();
+        } else {
+            self.feedback = "托盘不可用，已退回系统最小化".to_string();
+            self.hidden_to_tray = false;
+            self.last_minimized = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            ctx.request_repaint();
         }
     }
 
     #[cfg(target_os = "linux")]
     fn minimize_to_tray(&mut self, ctx: &egui::Context) {
-        match spawn_tray_shell(&self.config_path) {
-            Ok(()) => {
-                self.hidden_to_tray = true;
-                self.last_minimized = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            }
-            Err(error) => {
-                self.feedback = format!("托盘最小化失败: {error}");
-                self.hidden_to_tray = false;
-                self.last_minimized = false;
-                ctx.request_repaint();
-            }
+        if let Some(tray) = &self.tray {
+            let _ = tray.control_tx.send(TrayVisibilityCommand::Show);
+            self.hidden_to_tray = true;
+            self.last_minimized = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            ctx.request_repaint();
+        } else {
+            self.feedback = "托盘不可用，已退回系统最小化".to_string();
+            self.hidden_to_tray = false;
+            self.last_minimized = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            ctx.request_repaint();
         }
     }
 
@@ -1301,6 +1374,37 @@ impl AcceleratorApp {
         }
     }
 
+    #[cfg(target_os = "windows")]
+    fn restore_from_tray(&mut self, ctx: &egui::Context) {
+        self.hidden_to_tray = false;
+        self.last_minimized = true;
+        if let Some(tray) = &self.tray {
+            let _ = tray.control_tx.send(TrayVisibilityCommand::Hide);
+        }
+        if let Some(hwnd) = self.window_handle {
+            crate::platform::restore_app_window(hwnd);
+        } else {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+        ctx.request_repaint();
+    }
+
+    #[cfg(target_os = "windows")]
+    fn poll_tray_events(&mut self, ctx: &egui::Context) {
+        while let Ok(command) = self.tray_rx.try_recv() {
+            match command {
+                TrayCommand::Restore => self.restore_from_tray(ctx),
+                TrayCommand::Quit => {
+                    if let Some(tray) = &self.tray {
+                        let _ = tray.control_tx.send(TrayVisibilityCommand::Quit);
+                    }
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+        }
+    }
+
     #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
     fn sync_minimize_to_tray(&mut self, ctx: &egui::Context) {
         let minimized = ctx.input(|input| input.viewport().minimized.unwrap_or(false));
@@ -1327,6 +1431,10 @@ impl eframe::App for AcceleratorApp {
         {
             self.poll_tray_events(ctx);
         }
+        #[cfg(target_os = "windows")]
+        {
+            self.poll_tray_events(ctx);
+        }
         #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
         self.sync_minimize_to_tray(ctx);
 
@@ -1349,9 +1457,9 @@ impl eframe::App for AcceleratorApp {
                     UiPage::Launcher => {
                         egui::Frame::new()
                             .fill(egui::Color32::from_rgb(20, 24, 29))
-                            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
+                            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 50, 58)))
                             .corner_radius(egui::CornerRadius::same(16))
-                            .inner_margin(egui::Margin::same(12))
+                            .inner_margin(egui::Margin::same(14))
                             .show(ui, |ui| {
                                 self.render_action_panel(ui, ctx);
                             });
@@ -1359,7 +1467,7 @@ impl eframe::App for AcceleratorApp {
                     UiPage::Details => {
                         panel_frame(
                             egui::Color32::from_rgb(20, 24, 29),
-                            egui::Color32::from_rgb(48, 54, 61),
+                            egui::Color32::from_rgb(44, 50, 58),
                         )
                         .show(ui, |ui| {
                             egui::ScrollArea::vertical()
@@ -1373,7 +1481,7 @@ impl eframe::App for AcceleratorApp {
                     UiPage::Config => {
                         panel_frame(
                             egui::Color32::from_rgb(20, 24, 29),
-                            egui::Color32::from_rgb(48, 54, 61),
+                            egui::Color32::from_rgb(44, 50, 58),
                         )
                         .show(ui, |ui| {
                             egui::ScrollArea::vertical()
@@ -1387,7 +1495,7 @@ impl eframe::App for AcceleratorApp {
                     UiPage::About => {
                         panel_frame(
                             egui::Color32::from_rgb(20, 24, 29),
-                            egui::Color32::from_rgb(48, 54, 61),
+                            egui::Color32::from_rgb(44, 50, 58),
                         )
                         .show(ui, |ui| {
                             egui::ScrollArea::vertical()
@@ -1732,9 +1840,9 @@ fn install_theme(ctx: &egui::Context) {
     style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(32, 37, 44);
     style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(32, 37, 44);
     style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::from_rgb(232, 236, 239);
-    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(39, 45, 53);
-    style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(39, 45, 53);
-    style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(248, 249, 250);
+    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(44, 50, 58);
+    style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(44, 50, 58);
+    style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(252, 253, 254);
     style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(244, 184, 72);
     style.visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(244, 184, 72);
     style.visuals.widgets.active.fg_stroke.color = egui::Color32::from_rgb(28, 24, 17);
@@ -1748,23 +1856,29 @@ fn install_theme(ctx: &egui::Context) {
     style.visuals.extreme_bg_color = egui::Color32::from_rgb(12, 16, 20);
     style.visuals.faint_bg_color = egui::Color32::from_rgb(21, 25, 30);
     style.visuals.window_corner_radius = egui::CornerRadius::same(18);
-    style.visuals.menu_corner_radius = egui::CornerRadius::same(8);
-    style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(8);
-    style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(8);
-    style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(8);
-    style.spacing.button_padding = egui::vec2(10.0, 6.0);
+    style.visuals.menu_corner_radius = egui::CornerRadius::same(10);
+    style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(10);
+    style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(10);
+    style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(10);
+    style.visuals.window_shadow = egui::Shadow {
+        offset: [0, 4],
+        blur: 16,
+        spread: 2,
+        color: egui::Color32::from_rgba_unmultiplied(0, 0, 0, 80),
+    };
+    style.spacing.button_padding = egui::vec2(12.0, 7.0);
     style.spacing.item_spacing = egui::vec2(8.0, 8.0);
     style.text_styles.insert(
         egui::TextStyle::Button,
-        FontId::new(12.5, FontFamily::Proportional),
+        FontId::new(13.0, FontFamily::Proportional),
     );
     style.text_styles.insert(
         egui::TextStyle::Body,
-        FontId::new(12.5, FontFamily::Proportional),
+        FontId::new(13.0, FontFamily::Proportional),
     );
     style.text_styles.insert(
         egui::TextStyle::Small,
-        FontId::new(11.0, FontFamily::Proportional),
+        FontId::new(11.5, FontFamily::Proportional),
     );
     ctx.set_style(style);
 }
@@ -1773,8 +1887,8 @@ fn panel_frame(fill: egui::Color32, stroke: egui::Color32) -> egui::Frame {
     egui::Frame::new()
         .fill(fill)
         .stroke(egui::Stroke::new(1.0, stroke))
-        .inner_margin(egui::Margin::same(10))
-        .corner_radius(egui::CornerRadius::same(12))
+        .inner_margin(egui::Margin::same(14))
+        .corner_radius(egui::CornerRadius::same(14))
 }
 
 fn title_bar_button(
@@ -1786,15 +1900,15 @@ fn title_bar_button(
     let (fill, text, stroke) = if enabled {
         if danger {
             (
-                egui::Color32::from_rgba_unmultiplied(185, 72, 61, 30),
-                egui::Color32::from_rgb(244, 246, 248),
-                egui::Color32::from_rgb(94, 57, 54),
+                egui::Color32::from_rgba_unmultiplied(200, 60, 50, 35),
+                egui::Color32::from_rgb(248, 248, 250),
+                egui::Color32::from_rgb(110, 55, 50),
             )
         } else {
             (
-                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 8),
-                egui::Color32::from_rgb(218, 223, 228),
-                egui::Color32::from_rgb(58, 64, 72),
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 12),
+                egui::Color32::from_rgb(220, 225, 230),
+                egui::Color32::from_rgb(60, 66, 74),
             )
         }
     } else {
@@ -1807,13 +1921,13 @@ fn title_bar_button(
 
     egui::Button::new(
         RichText::new(label)
-            .font(FontId::proportional(13.0))
+            .font(FontId::proportional(14.0))
             .strong()
             .color(text),
     )
     .fill(fill)
     .stroke(egui::Stroke::new(1.0, stroke))
-    .corner_radius(egui::CornerRadius::same(8))
+    .corner_radius(egui::CornerRadius::same(10))
     .min_size(min_size)
 }
 
@@ -1842,8 +1956,8 @@ fn launcher_primary_button(
             .color(text),
     )
     .fill(fill)
-    .stroke(egui::Stroke::new(1.2, stroke))
-    .corner_radius(egui::CornerRadius::same(12))
+    .stroke(egui::Stroke::new(1.5, stroke))
+    .corner_radius(egui::CornerRadius::same(14))
     .min_size(min_size)
     .sense(if enabled {
         egui::Sense::click()
@@ -1859,9 +1973,9 @@ fn launcher_secondary_button(
 ) -> egui::Button<'static> {
     let (fill, text, stroke) = if enabled {
         (
-            egui::Color32::from_rgb(37, 42, 49),
+            egui::Color32::from_rgb(34, 39, 46),
             egui::Color32::from_rgb(236, 240, 244),
-            egui::Color32::from_rgb(78, 84, 92),
+            egui::Color32::from_rgb(70, 76, 84),
         )
     } else {
         (
@@ -1879,7 +1993,7 @@ fn launcher_secondary_button(
     )
     .fill(fill)
     .stroke(egui::Stroke::new(1.0, stroke))
-    .corner_radius(egui::CornerRadius::same(12))
+    .corner_radius(egui::CornerRadius::same(14))
     .min_size(min_size)
 }
 
@@ -1902,12 +2016,13 @@ fn filled_button(
     };
     egui::Button::new(
         RichText::new(label)
-            .font(FontId::proportional(12.0))
+            .font(FontId::proportional(12.5))
             .strong()
             .color(text),
     )
     .fill(fill)
     .stroke(egui::Stroke::new(1.0, stroke))
+    .corner_radius(egui::CornerRadius::same(10))
     .min_size(min_size)
     .sense(if enabled {
         egui::Sense::click()
@@ -1923,9 +2038,9 @@ fn subtle_button(
 ) -> egui::Button<'static> {
     let (fill, text, stroke) = if enabled {
         (
-            egui::Color32::from_rgb(31, 36, 42),
+            egui::Color32::from_rgb(28, 33, 40),
             egui::Color32::from_rgb(236, 239, 242),
-            egui::Color32::from_rgb(70, 76, 84),
+            egui::Color32::from_rgb(62, 68, 76),
         )
     } else {
         (
@@ -1936,12 +2051,13 @@ fn subtle_button(
     };
     egui::Button::new(
         RichText::new(label)
-            .font(FontId::proportional(11.4))
+            .font(FontId::proportional(11.8))
             .strong()
             .color(text),
     )
     .fill(fill)
     .stroke(egui::Stroke::new(1.0, stroke))
+    .corner_radius(egui::CornerRadius::same(10))
     .min_size(min_size)
     .sense(if enabled {
         egui::Sense::click()
@@ -1952,23 +2068,23 @@ fn subtle_button(
 
 fn scope_metric_card(ui: &mut egui::Ui, label: &str, value: &str) {
     egui::Frame::new()
-        .fill(egui::Color32::from_rgb(19, 22, 27))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 52, 60)))
-        .inner_margin(egui::Margin::symmetric(10, 10))
-        .corner_radius(egui::CornerRadius::same(8))
+        .fill(egui::Color32::from_rgb(17, 20, 25))
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 48, 56)))
+        .inner_margin(egui::Margin::symmetric(10, 12))
+        .corner_radius(egui::CornerRadius::same(10))
         .show(ui, |ui| {
             ui.set_min_size(egui::vec2(0.0, 64.0));
             ui.vertical_centered(|ui| {
                 ui.label(
                     RichText::new(label)
-                        .font(FontId::proportional(10.2))
+                        .font(FontId::proportional(10.5))
                         .strong()
-                        .color(egui::Color32::from_rgb(160, 171, 179)),
+                        .color(egui::Color32::from_rgb(150, 161, 170)),
                 );
-                ui.add_space(3.0);
+                ui.add_space(4.0);
                 ui.label(
                     RichText::new(value)
-                        .font(FontId::proportional(18.0))
+                        .font(FontId::proportional(20.0))
                         .strong()
                         .color(egui::Color32::from_rgb(243, 179, 74)),
                 );
@@ -1978,14 +2094,14 @@ fn scope_metric_card(ui: &mut egui::Ui, label: &str, value: &str) {
 
 fn subtle_note(ui: &mut egui::Ui, text: &str) {
     egui::Frame::new()
-        .fill(egui::Color32::from_rgb(19, 22, 27))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 52, 60)))
-        .inner_margin(egui::Margin::symmetric(10, 8))
-        .corner_radius(egui::CornerRadius::same(8))
+        .fill(egui::Color32::from_rgb(17, 20, 25))
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 48, 56)))
+        .inner_margin(egui::Margin::symmetric(12, 10))
+        .corner_radius(egui::CornerRadius::same(10))
         .show(ui, |ui| {
             ui.label(
                 RichText::new(text)
-                    .font(FontId::proportional(10.9))
+                    .font(FontId::proportional(11.2))
                     .color(egui::Color32::from_rgb(186, 194, 201)),
             );
         });
@@ -1993,21 +2109,21 @@ fn subtle_note(ui: &mut egui::Ui, text: &str) {
 
 fn detail_value_row(ui: &mut egui::Ui, label: &str, value: &str) {
     egui::Frame::new()
-        .fill(egui::Color32::from_rgb(19, 22, 27))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 52, 60)))
-        .inner_margin(egui::Margin::symmetric(10, 8))
-        .corner_radius(egui::CornerRadius::same(8))
+        .fill(egui::Color32::from_rgb(17, 20, 25))
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 48, 56)))
+        .inner_margin(egui::Margin::symmetric(12, 10))
+        .corner_radius(egui::CornerRadius::same(10))
         .show(ui, |ui| {
             ui.label(
                 RichText::new(label)
-                    .font(FontId::proportional(10.8))
+                    .font(FontId::proportional(11.0))
                     .strong()
                     .color(egui::Color32::from_rgb(243, 179, 74)),
             );
             ui.add_space(3.0);
             ui.label(
                 RichText::new(value)
-                    .font(FontId::monospace(11.0))
+                    .font(FontId::monospace(11.2))
                     .color(egui::Color32::from_rgb(232, 236, 239)),
             );
         });
@@ -2017,16 +2133,104 @@ fn about_bullet(ui: &mut egui::Ui, text: &str) {
     ui.horizontal_wrapped(|ui| {
         ui.label(
             RichText::new("•")
-                .font(FontId::proportional(13.0))
+                .font(FontId::proportional(14.0))
                 .strong()
                 .color(egui::Color32::from_rgb(243, 179, 74)),
         );
         ui.label(
             RichText::new(text)
-                .font(FontId::proportional(11.8))
+                .font(FontId::proportional(12.0))
                 .color(egui::Color32::from_rgb(214, 219, 223)),
         );
     });
+}
+
+#[cfg(target_os = "windows")]
+fn build_windows_tray_state(
+    ctx: &egui::Context,
+) -> (Option<TrayState>, Receiver<TrayCommand>) {
+    let (event_tx, event_rx) = mpsc::channel();
+    let (control_tx, control_rx) = mpsc::channel::<TrayVisibilityCommand>();
+
+    let menu = Menu::new();
+    let show_item = MenuItem::with_id("tray-show", "打开窗口", true, None);
+    let quit_item = MenuItem::with_id("tray-quit", "退出程序", true, None);
+    if menu
+        .append_items(&[&show_item, &PredefinedMenuItem::separator(), &quit_item])
+        .is_err()
+    {
+        return (None, event_rx);
+    }
+
+    let tray_icon = match tray_window_icon() {
+        Ok(icon) => TrayIconBuilder::new()
+            .with_id("linuxdo-accelerator-tray")
+            .with_menu(Box::new(menu))
+            .with_menu_on_left_click(false)
+            .with_tooltip("Linux.do Accelerator")
+            .with_icon(icon)
+            .build()
+            .ok(),
+        Err(_) => None,
+    };
+
+    let Some(tray_icon) = tray_icon else {
+        return (None, event_rx);
+    };
+    let _ = tray_icon.set_visible(false);
+
+    let show_id = show_item.id().clone();
+    let quit_id = quit_item.id().clone();
+    let event_tx_click = event_tx.clone();
+    let ctx_menu = ctx.clone();
+    let ctx_tray = ctx.clone();
+
+    MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
+        if event.id == show_id {
+            let _ = event_tx.send(TrayCommand::Restore);
+            ctx_menu.request_repaint();
+        } else if event.id == quit_id {
+            let _ = event_tx.send(TrayCommand::Quit);
+            ctx_menu.request_repaint();
+        }
+    }));
+
+    TrayIconEvent::set_event_handler(Some(move |event| match event {
+        TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+        }
+        | TrayIconEvent::DoubleClick {
+            button: MouseButton::Left,
+            ..
+        } => {
+            let _ = event_tx_click.send(TrayCommand::Restore);
+            ctx_tray.request_repaint();
+        }
+        _ => {}
+    }));
+
+    // Background thread to handle show/hide/quit commands for the tray icon
+    thread::spawn(move || {
+        loop {
+            match control_rx.recv() {
+                Ok(TrayVisibilityCommand::Show) => {
+                    let _ = tray_icon.set_visible(true);
+                }
+                Ok(TrayVisibilityCommand::Hide) => {
+                    let _ = tray_icon.set_visible(false);
+                }
+                Ok(TrayVisibilityCommand::Quit) => {
+                    let _ = tray_icon.set_visible(false);
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    (Some(TrayState { control_tx }), event_rx)
 }
 
 #[cfg(target_os = "linux")]
@@ -2103,6 +2307,9 @@ fn build_tray_state(
         glib::timeout_add_local(Duration::from_millis(100), move || {
             while let Ok(command) = control_rx.try_recv() {
                 match command {
+                    TrayVisibilityCommand::Show => {
+                        let _ = tray_icon.set_visible(true);
+                    }
                     TrayVisibilityCommand::Hide => {
                         let _ = tray_icon.set_visible(false);
                     }
