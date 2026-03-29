@@ -10,12 +10,16 @@
     <img alt="Platforms" src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android-1f6feb?style=flat-square" />
     <img alt="Package" src="https://img.shields.io/badge/Package-EXE%20%7C%20DEB%20%7C%20DMG%20%7C%20APK-2da44e?style=flat-square" />
     <img alt="Mode" src="https://img.shields.io/badge/Mode-CLI%20%2B%20Desktop%20%2B%20Android-6f42c1?style=flat-square" />
+    
   </p>
 
   <p>
     <a href="./CHANGELOG.md">更新日志 / Changelog</a>
   </p>
 </div>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/cdb6c97f-1dcb-4585-97f9-6f96f2bda0f5" alt="Linux.do Accelerator GUI Preview" width="480" />
+</p>
 
 <p align="center">
   <img src="./docs/images/gui-preview.png" alt="Linux.do Accelerator GUI Preview" width="480" />
