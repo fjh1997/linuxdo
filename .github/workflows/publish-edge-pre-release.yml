@@ -36,10 +36,10 @@ jobs:
             package_cmd: cargo packager -f nsis
           - os: macos-15
             artifact_name: macos-arm64
-            package_cmd: cargo packager -f dmg
+            package_cmd: cargo packager -f app
           - os: macos-15-intel
             artifact_name: macos-intel
-            package_cmd: cargo packager -f dmg
+            package_cmd: cargo packager -f app
 
     runs-on: ${{ matrix.os }}
     name: Build ${{ matrix.artifact_name }}
@@ -103,11 +103,19 @@ jobs:
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
 
+      - name: Install dmgbuild
+        if: runner.os == 'macOS'
+        run: python3 -m pip install --user dmgbuild
+
       - name: Build binary
         run: cargo build --release --locked --bin linuxdo-accelerator
 
       - name: Package app
         run: ${{ matrix.package_cmd }}
+
+      - name: Build DMG
+        if: runner.os == 'macOS'
+        run: bash ./scripts/build-macos-dmg.sh
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
