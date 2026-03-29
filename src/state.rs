@@ -1,4 +1,6 @@
 use std::fs;
+#[cfg(target_os = "windows")]
+use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -8,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::paths::AppPaths;
 use crate::platform::is_process_running;
 use crate::platform::sync_user_ownership;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_REPLACE_EXISTING, MoveFileExW};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceState {
@@ -229,18 +233,24 @@ fn replace_file(path: &Path, content: &[u8]) -> Result<()> {
     fs::write(&tmp_path, content)
         .with_context(|| format!("failed to write {}", tmp_path.display()))?;
 
-    if path.exists() {
-        match fs::remove_file(path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                let _ = fs::remove_file(&tmp_path);
-                return Err(error).with_context(|| format!("failed to replace {}", path.display()));
-            }
-        }
-    }
-
-    fs::rename(&tmp_path, path)
-        .with_context(|| format!("failed to move {} to {}", tmp_path.display(), path.display()))?;
+    move_file_replace(&tmp_path, path).with_context(|| {
+        format!("failed to move {} to {}", tmp_path.display(), path.display())
+    })?;
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn move_file_replace(src: &Path, dst: &Path) -> Result<()> {
+    let src_wide: Vec<u16> = src.as_os_str().encode_wide().chain(Some(0)).collect();
+    let dst_wide: Vec<u16> = dst.as_os_str().encode_wide().chain(Some(0)).collect();
+    let ok = unsafe { MoveFileExW(src_wide.as_ptr(), dst_wide.as_ptr(), MOVEFILE_REPLACE_EXISTING) };
+    if ok == 0 {
+        return Err(std::io::Error::last_os_error()).context("MoveFileExW failed");
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn move_file_replace(src: &Path, dst: &Path) -> Result<()> {
+    fs::rename(src, dst).context("rename failed")
 }

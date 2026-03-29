@@ -731,25 +731,36 @@ fn spawn_ui_lease_watchdog(
             return;
         }
         let stale_after = Duration::from_secs(8);
+        let mut missing_since: Option<u64> = None;
         loop {
             tokio::time::sleep(Duration::from_secs(2)).await;
 
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|duration| duration.as_secs())
+                .unwrap_or(0);
             let Some(lease) = state::read_ui_lease(&paths).ok().flatten() else {
+                let first_missing_at = *missing_since.get_or_insert(now);
+                let missing_for = now.saturating_sub(first_missing_at);
+                if missing_for < stale_after.as_secs() {
+                    continue;
+                }
                 ui_managed_shutdown.store(true, Ordering::SeqCst);
                 let _ = runtime_log::append(
                     &paths,
                     "WARN",
                     "ui-watchdog",
-                    "ui lease missing while daemon is ui-managed; requesting shutdown",
+                    &format!(
+                        "ui lease missing for {}s while daemon is ui-managed; requesting shutdown",
+                        missing_for
+                    ),
                 );
                 let _ = shutdown_tx.send(true);
                 break;
             };
+            missing_since = None;
 
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|duration| duration.as_secs())
-                .unwrap_or(lease.updated_at);
+            let now = now.max(lease.updated_at);
             let stale = now.saturating_sub(lease.updated_at) >= stale_after.as_secs();
             let owner_dead = !is_process_running(lease.owner_pid);
             if stale || owner_dead {
