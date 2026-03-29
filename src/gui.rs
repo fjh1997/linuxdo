@@ -35,7 +35,10 @@ use crate::state::{self, ServiceState};
 
 const APP_WINDOW_TITLE: &str = "Linux.do Accelerator";
 const APP_ID: &str = "linuxdo-accelerator";
-const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+const APP_VERSION: &str = match option_env!("LINUXDO_BUILD_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
 const ACTIVE_REPAINT_INTERVAL: Duration = Duration::from_millis(100);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_secs(5);
 const TRAY_REPAINT_INTERVAL: Duration = Duration::from_secs(15);
@@ -1624,7 +1627,6 @@ impl AcceleratorApp {
         }
     }
 
-
     #[cfg(target_os = "windows")]
     fn restore_from_tray(&mut self, ctx: &egui::Context) {
         self.hidden_to_tray = false;
@@ -2719,7 +2721,7 @@ fn schedule_windows_shortcut_icon_refresh(config_path: &Path) {
             .with_context(|| format!("failed to create {}", paths.runtime_dir.display()))?;
 
         let stamp_path = paths.runtime_dir.join("windows-shortcut-icon-sync.txt");
-        let stamp = format!("{}\n{}", env!("CARGO_PKG_VERSION"), current_exe.display());
+        let stamp = format!("{}\n{}", APP_VERSION, current_exe.display());
         if std::fs::read_to_string(&stamp_path).ok().as_deref() == Some(stamp.as_str()) {
             return Ok(());
         }

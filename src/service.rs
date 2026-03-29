@@ -1,5 +1,6 @@
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
+#[cfg(target_family = "unix")]
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -105,11 +106,7 @@ pub async fn run_foreground(config_path: Option<PathBuf>, with_setup: bool) -> R
     state::mark_running(&paths, pid)?;
     let ui_managed_shutdown = Arc::new(AtomicBool::new(false));
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    let watchdog = spawn_ui_lease_watchdog(
-        paths.clone(),
-        ui_managed_shutdown.clone(),
-        shutdown_tx,
-    );
+    let watchdog = spawn_ui_lease_watchdog(paths.clone(), ui_managed_shutdown.clone(), shutdown_tx);
     let result = run_proxy(config.clone(), paths.clone(), bundle, shutdown_rx).await;
     watchdog.abort();
     let _ = state::clear_pid_if_matches(&paths, pid);
@@ -193,9 +190,7 @@ pub fn helper_start(config_path: Option<PathBuf>) -> Result<()> {
                 log_warn(
                     &paths,
                     "helper-start",
-                    &format!(
-                        "启动流程报告异常，但检测到现有服务仍在运行，已修复状态：{error:#}"
-                    ),
+                    &format!("启动流程报告异常，但检测到现有服务仍在运行，已修复状态：{error:#}"),
                 );
                 return Ok(());
             }
@@ -466,6 +461,7 @@ fn wait_until_running(paths: &AppPaths, config: &AppConfig, timeout: Duration) -
     bail!("daemon start timed out")
 }
 
+#[cfg_attr(not(target_family = "unix"), allow(unused_variables))]
 fn discover_running_daemon_pid(paths: &AppPaths) -> Option<u32> {
     #[cfg(target_family = "unix")]
     {
@@ -727,8 +723,18 @@ fn spawn_ui_lease_watchdog(
     shutdown_tx: watch::Sender<bool>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        if state::read_ui_lease(&paths).ok().flatten().is_none() {
-            return;
+        match state::read_ui_lease(&paths) {
+            Ok(Some(_)) => {}
+            Ok(None) => return,
+            Err(error) => {
+                let _ = runtime_log::append(
+                    &paths,
+                    "WARN",
+                    "ui-watchdog",
+                    &format!("failed to read initial ui lease state: {error:#}"),
+                );
+                return;
+            }
         }
         let stale_after = Duration::from_secs(8);
         let mut missing_since: Option<u64> = None;
@@ -739,31 +745,43 @@ fn spawn_ui_lease_watchdog(
                 .duration_since(UNIX_EPOCH)
                 .map(|duration| duration.as_secs())
                 .unwrap_or(0);
-            let Some(lease) = state::read_ui_lease(&paths).ok().flatten() else {
-                let first_missing_at = *missing_since.get_or_insert(now);
-                let missing_for = now.saturating_sub(first_missing_at);
-                if missing_for < stale_after.as_secs() {
+            let lease = match state::read_ui_lease(&paths) {
+                Ok(Some(lease)) => lease,
+                Ok(None) => {
+                    let first_missing_at = *missing_since.get_or_insert(now);
+                    let missing_for = now.saturating_sub(first_missing_at);
+                    if missing_for < stale_after.as_secs() {
+                        continue;
+                    }
+                    ui_managed_shutdown.store(true, Ordering::SeqCst);
+                    let _ = runtime_log::append(
+                        &paths,
+                        "WARN",
+                        "ui-watchdog",
+                        &format!(
+                            "ui lease missing for {}s while daemon is ui-managed; requesting shutdown",
+                            missing_for
+                        ),
+                    );
+                    let _ = shutdown_tx.send(true);
+                    break;
+                }
+                Err(error) => {
+                    let _ = runtime_log::append(
+                        &paths,
+                        "WARN",
+                        "ui-watchdog",
+                        &format!("failed to read ui lease state, keeping daemon alive: {error:#}"),
+                    );
                     continue;
                 }
-                ui_managed_shutdown.store(true, Ordering::SeqCst);
-                let _ = runtime_log::append(
-                    &paths,
-                    "WARN",
-                    "ui-watchdog",
-                    &format!(
-                        "ui lease missing for {}s while daemon is ui-managed; requesting shutdown",
-                        missing_for
-                    ),
-                );
-                let _ = shutdown_tx.send(true);
-                break;
             };
             missing_since = None;
 
             let now = now.max(lease.updated_at);
             let stale = now.saturating_sub(lease.updated_at) >= stale_after.as_secs();
-            let owner_dead = !is_process_running(lease.owner_pid);
-            if stale || owner_dead {
+            if stale {
+                let owner_dead = !is_process_running(lease.owner_pid);
                 ui_managed_shutdown.store(true, Ordering::SeqCst);
                 let _ = runtime_log::append(
                     &paths,

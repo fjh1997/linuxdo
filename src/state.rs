@@ -234,7 +234,11 @@ fn replace_file(path: &Path, content: &[u8]) -> Result<()> {
         .with_context(|| format!("failed to write {}", tmp_path.display()))?;
 
     move_file_replace(&tmp_path, path).with_context(|| {
-        format!("failed to move {} to {}", tmp_path.display(), path.display())
+        format!(
+            "failed to move {} to {}",
+            tmp_path.display(),
+            path.display()
+        )
     })?;
     Ok(())
 }
@@ -243,7 +247,13 @@ fn replace_file(path: &Path, content: &[u8]) -> Result<()> {
 fn move_file_replace(src: &Path, dst: &Path) -> Result<()> {
     let src_wide: Vec<u16> = src.as_os_str().encode_wide().chain(Some(0)).collect();
     let dst_wide: Vec<u16> = dst.as_os_str().encode_wide().chain(Some(0)).collect();
-    let ok = unsafe { MoveFileExW(src_wide.as_ptr(), dst_wide.as_ptr(), MOVEFILE_REPLACE_EXISTING) };
+    let ok = unsafe {
+        MoveFileExW(
+            src_wide.as_ptr(),
+            dst_wide.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING,
+        )
+    };
     if ok == 0 {
         return Err(std::io::Error::last_os_error()).context("MoveFileExW failed");
     }

@@ -155,7 +155,10 @@ pub async fn run_proxy(
     Ok(())
 }
 
-async fn run_http_redirect(state: Arc<AppState>, mut shutdown_rx: watch::Receiver<bool>) -> Result<()> {
+async fn run_http_redirect(
+    state: Arc<AppState>,
+    mut shutdown_rx: watch::Receiver<bool>,
+) -> Result<()> {
     let address = format!("{}:{}", state.config.listen_host, state.config.http_port);
     let listener = TcpListener::bind(&address)
         .await
@@ -398,7 +401,11 @@ async fn dispatch_upstream_request(
             path_and_query,
             &format!(
                 "attempt addr={addr} scheme={upstream_scheme} ech={} edge_node={}",
-                if upstream.ech_config.is_some() { "yes" } else { "no" },
+                if upstream.ech_config.is_some() {
+                    "yes"
+                } else {
+                    "no"
+                },
                 state
                     .config
                     .edge_node_override()
@@ -633,7 +640,11 @@ async fn resolve_upstream(state: &AppState, host: &str, port: u16) -> Result<Res
             &format!(
                 "resolve cache-hit addrs={} ech={}",
                 format_socket_addrs(&cached.addrs),
-                if cached.ech_config.is_some() { "yes" } else { "no" }
+                if cached.ech_config.is_some() {
+                    "yes"
+                } else {
+                    "no"
+                }
             ),
         );
         return Ok(cached);
@@ -689,8 +700,7 @@ async fn resolve_upstream(state: &AppState, host: &str, port: u16) -> Result<Res
         }
         Ok((Vec::new(), None))
     };
-    let ((mut ips, addr_ttl), (extra_ips, extra_ttl)) = if let Some(edge_override) = edge_override
-    {
+    let ((mut ips, addr_ttl), (extra_ips, extra_ttl)) = if let Some(edge_override) = edge_override {
         let override_lookup = async {
             match edge_override {
                 DnsHostOverride::Addresses(ips) => Ok((ips, None)),
@@ -743,7 +753,11 @@ async fn resolve_upstream(state: &AppState, host: &str, port: u16) -> Result<Res
         &format!(
             "resolve binding_host={binding_host} target_host={target_host} addrs={} ech={} edge_node={}",
             format_socket_addrs(&upstream.addrs),
-            if upstream.ech_config.is_some() { "yes" } else { "no" },
+            if upstream.ech_config.is_some() {
+                "yes"
+            } else {
+                "no"
+            },
             state
                 .config
                 .edge_node_override()
@@ -1281,16 +1295,16 @@ fn extract_host(headers: &HeaderMap, uri: &http::Uri, config: &AppConfig) -> Opt
     uri.authority()
         .map(|authority| authority.host().to_ascii_lowercase())
         .or_else(|| {
-    headers
-        .get(HOST)
-        .and_then(|value| value.to_str().ok())
-        .map(|value| {
-            value
-                .split(':')
-                .next()
-                .unwrap_or(value)
-                .to_ascii_lowercase()
-        })
+            headers
+                .get(HOST)
+                .and_then(|value| value.to_str().ok())
+                .map(|value| {
+                    value
+                        .split(':')
+                        .next()
+                        .unwrap_or(value)
+                        .to_ascii_lowercase()
+                })
         })
         .or_else(|| config.proxy_domains.first().cloned())
 }
