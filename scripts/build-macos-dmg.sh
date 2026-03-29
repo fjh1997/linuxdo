@@ -55,9 +55,9 @@ python3 -m dmgbuild \
   -D "window_width=760" \
   -D "window_height=480" \
   -D "app_x=178" \
-  -D "app_y=222" \
+  -D "app_y=214" \
   -D "apps_x=582" \
-  -D "apps_y=222" \
+  -D "apps_y=214" \
   "${product_name}" \
   "${dmg_path}"
 

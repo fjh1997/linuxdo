@@ -12,9 +12,9 @@ background = os.path.abspath(_define("background", "assets/dmg/background.png"))
 window_width = int(_define("window_width", "760"))
 window_height = int(_define("window_height", "480"))
 app_x = int(_define("app_x", "178"))
-app_y = int(_define("app_y", "222"))
+app_y = int(_define("app_y", "214"))
 apps_x = int(_define("apps_x", "582"))
-apps_y = int(_define("apps_y", "222"))
+apps_y = int(_define("apps_y", "214"))
 
 
 format = "UDZO"
@@ -35,10 +35,10 @@ background = background
 window_rect = ((120, 120), (window_width, window_height))
 
 arrange_by = None
-grid_spacing = 120
+grid_spacing = 130
 label_pos = "bottom"
 text_size = 14
-icon_size = 104
+icon_size = 132
 
 icon_locations = {
     app_name: (app_x, app_y),
