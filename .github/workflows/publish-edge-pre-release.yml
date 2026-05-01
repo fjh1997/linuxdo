@@ -67,12 +67,14 @@ jobs:
           PY
           )
           build_serial="$(( GITHUB_RUN_NUMBER % 10000 ))"
-          RELEASE_VERSION="${base_version}-edge.${GITHUB_RUN_NUMBER}" \
+          short_sha="${GITHUB_SHA::12}"
+          edge_version="${base_version}-edge.${GITHUB_RUN_NUMBER}.${short_sha}"
+          RELEASE_VERSION="${edge_version}" \
           ANDROID_VERSION_SERIAL="${build_serial}" \
           "$PYTHON_BIN" ./scripts/ci-sync-version.py
-          echo "RELEASE_VERSION=${base_version}-edge.${GITHUB_RUN_NUMBER}" >> "${GITHUB_ENV}"
-          echo "LINUXDO_BUILD_VERSION=${base_version}-edge.${GITHUB_RUN_NUMBER}" >> "${GITHUB_ENV}"
-          echo "LINUXDO_GIT_HASH=${GITHUB_SHA::12}" >> "${GITHUB_ENV}"
+          echo "RELEASE_VERSION=${edge_version}" >> "${GITHUB_ENV}"
+          echo "LINUXDO_BUILD_VERSION=${edge_version}" >> "${GITHUB_ENV}"
+          echo "LINUXDO_GIT_HASH=${short_sha}" >> "${GITHUB_ENV}"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -170,12 +172,14 @@ jobs:
           PY
           )
           build_serial="$(( GITHUB_RUN_NUMBER % 10000 ))"
-          RELEASE_VERSION="${base_version}-edge.${GITHUB_RUN_NUMBER}" \
+          short_sha="${GITHUB_SHA::12}"
+          edge_version="${base_version}-edge.${GITHUB_RUN_NUMBER}.${short_sha}"
+          RELEASE_VERSION="${edge_version}" \
           ANDROID_VERSION_SERIAL="${build_serial}" \
           "$PYTHON_BIN" ./scripts/ci-sync-version.py
-          echo "RELEASE_VERSION=${base_version}-edge.${GITHUB_RUN_NUMBER}" >> "${GITHUB_ENV}"
-          echo "LINUXDO_BUILD_VERSION=${base_version}-edge.${GITHUB_RUN_NUMBER}" >> "${GITHUB_ENV}"
-          echo "LINUXDO_GIT_HASH=${GITHUB_SHA::12}" >> "${GITHUB_ENV}"
+          echo "RELEASE_VERSION=${edge_version}" >> "${GITHUB_ENV}"
+          echo "LINUXDO_BUILD_VERSION=${edge_version}" >> "${GITHUB_ENV}"
+          echo "LINUXDO_GIT_HASH=${short_sha}" >> "${GITHUB_ENV}"
 
       - uses: actions/setup-java@v4
         with:
