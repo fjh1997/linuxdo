@@ -1,3 +1,4 @@
+import java.io.ByteArrayOutputStream
 import org.gradle.api.GradleException
 import org.gradle.api.tasks.Sync
 
