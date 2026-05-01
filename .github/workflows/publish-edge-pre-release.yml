@@ -72,6 +72,7 @@ jobs:
           "$PYTHON_BIN" ./scripts/ci-sync-version.py
           echo "RELEASE_VERSION=${base_version}-edge.${GITHUB_RUN_NUMBER}" >> "${GITHUB_ENV}"
           echo "LINUXDO_BUILD_VERSION=${base_version}-edge.${GITHUB_RUN_NUMBER}" >> "${GITHUB_ENV}"
+          echo "LINUXDO_GIT_HASH=${GITHUB_SHA::12}" >> "${GITHUB_ENV}"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -174,6 +175,7 @@ jobs:
           "$PYTHON_BIN" ./scripts/ci-sync-version.py
           echo "RELEASE_VERSION=${base_version}-edge.${GITHUB_RUN_NUMBER}" >> "${GITHUB_ENV}"
           echo "LINUXDO_BUILD_VERSION=${base_version}-edge.${GITHUB_RUN_NUMBER}" >> "${GITHUB_ENV}"
+          echo "LINUXDO_GIT_HASH=${GITHUB_SHA::12}" >> "${GITHUB_ENV}"
 
       - uses: actions/setup-java@v4
         with:

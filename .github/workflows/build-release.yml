@@ -58,6 +58,7 @@ jobs:
           fi
           echo "RELEASE_VERSION=${{ github.event.inputs.release_tag || github.ref_name }}" | sed 's/^RELEASE_VERSION=v/RELEASE_VERSION=/' >> "${GITHUB_ENV}"
           echo "LINUXDO_BUILD_VERSION=${{ github.event.inputs.release_tag || github.ref_name }}" | sed 's/^LINUXDO_BUILD_VERSION=v/LINUXDO_BUILD_VERSION=/' >> "${GITHUB_ENV}"
+          echo "LINUXDO_GIT_HASH=${GITHUB_SHA::12}" >> "${GITHUB_ENV}"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -148,6 +149,7 @@ jobs:
           fi
           echo "RELEASE_VERSION=${{ github.event.inputs.release_tag || github.ref_name }}" | sed 's/^RELEASE_VERSION=v/RELEASE_VERSION=/' >> "${GITHUB_ENV}"
           echo "LINUXDO_BUILD_VERSION=${{ github.event.inputs.release_tag || github.ref_name }}" | sed 's/^LINUXDO_BUILD_VERSION=v/LINUXDO_BUILD_VERSION=/' >> "${GITHUB_ENV}"
+          echo "LINUXDO_GIT_HASH=${GITHUB_SHA::12}" >> "${GITHUB_ENV}"
 
       - uses: actions/setup-java@v4
         with:

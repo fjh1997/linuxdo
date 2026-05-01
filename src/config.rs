@@ -7,7 +7,7 @@ use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_APP_CONFIG: &str = include_str!("../assets/defaults/linuxdo-accelerator.toml");
-const CURRENT_CONFIG_VERSION: &str = env!("CARGO_PKG_VERSION");
+const CURRENT_CONFIG_VERSION: &str = env!("LINUXDO_GIT_HASH");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {

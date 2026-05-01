@@ -116,7 +116,7 @@ object LinuxdoBinary {
         val configFile = configFile(context)
         val markerFile = File(configFile.parentFile, "$CONFIG_NAME.version")
         val backupFile = File(configFile.parentFile, "$CONFIG_NAME.bak")
-        val currentVersion = BuildConfig.VERSION_NAME
+        val currentVersion = BuildConfig.GIT_HASH
 
         if (configFile.exists()) {
             val markerVersion = readVersionMarker(markerFile)

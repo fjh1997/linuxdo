@@ -11,6 +11,17 @@ val generatedAssetsDir = layout.buildDirectory.dir("generated/linuxdoAssets")
 val rustBinaryProvider = providers
     .environmentVariable("LINUXDO_ANDROID_RUST_BIN")
     .orElse(repoRoot.resolve("target/aarch64-linux-android/release/linuxdo-accelerator").absolutePath)
+val gitHash: String = providers.environmentVariable("LINUXDO_GIT_HASH").getOrElse(
+    runCatching {
+        val output = ByteArrayOutputStream()
+        exec {
+            commandLine("git", "rev-parse", "--short=12", "HEAD")
+            workingDir(repoRoot)
+            standardOutput = output
+        }
+        output.toString().trim().ifEmpty { null }
+    }.getOrNull() ?: "unknown"
+)
 
 android {
     namespace = "io.linuxdo.accelerator.android"
@@ -22,6 +33,7 @@ android {
         targetSdk = 35
         versionCode = 3
         versionName = "0.1.10-android"
+        buildConfigField("String", "GIT_HASH", "\"$gitHash\"")
     }
 
     buildTypes {
