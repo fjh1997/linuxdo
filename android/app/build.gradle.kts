@@ -37,6 +37,10 @@ android {
         buildConfigField("String", "GIT_HASH", "\"$gitHash\"")
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
