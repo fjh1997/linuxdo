@@ -13,7 +13,7 @@ use tokio::sync::watch;
 use crate::certs::{ensure_bundle, load_or_create_bundle};
 use crate::config::AppConfig;
 use crate::hosts::{
-    apply_hosts, backup_hosts_file, hosts_are_applied, remove_hosts, restore_hosts_file,
+    apply_hosts, backup_hosts_file, remove_hosts, restore_hosts_file,
     validate_hosts_backup_file,
 };
 use crate::hosts_store::{BackupState, backup_state, clear_hosts_backup};
@@ -145,18 +145,18 @@ pub fn helper_start(config_path: Option<PathBuf>) -> Result<()> {
         ensure_elevated(&config, true)?;
         ensure_loopback_alias(&config)?;
 
-        let current = reconcile_running_state(&paths, &config)?;
-        if current.running {
-            ensure_runtime_environment(&paths, &config)?;
-            log_info(&paths, "helper-start", "检测到服务已在运行，跳过重复启动");
-            return Ok(());
-        }
-
         let bundle = ensure_bundle(&config, &paths.cert_dir)?;
         #[cfg(not(target_os = "macos"))]
         install_ca(&bundle.ca_cert_path, &config.ca_common_name)?;
         #[cfg(target_os = "macos")]
         let _ = bundle;
+
+        let current = reconcile_running_state(&paths, &config)?;
+        if current.running {
+            log_info(&paths, "helper-start", "检测到旧服务仍在运行，正在重启以加载新证书");
+            stop_running_daemon(&paths, &config)?;
+        }
+
         apply_hosts(&config, &paths)?;
         let _ = flush_dns_cache();
         state::mark_starting(&paths)?;
@@ -438,18 +438,6 @@ fn reconcile_running_state(paths: &AppPaths, config: &AppConfig) -> Result<state
     Ok(current)
 }
 
-fn ensure_runtime_environment(paths: &AppPaths, config: &AppConfig) -> Result<()> {
-    ensure_loopback_alias(config)?;
-
-    if !hosts_are_applied(config)? {
-        apply_hosts(config, paths)?;
-        let _ = flush_dns_cache();
-        log_info(&paths, "helper-start", "已修复缺失的 hosts 接管规则");
-    }
-
-    Ok(())
-}
-
 fn wait_until_running(paths: &AppPaths, config: &AppConfig, timeout: Duration) -> Result<()> {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
@@ -555,6 +543,20 @@ fn terminate_running_service(paths: &AppPaths) -> Result<Option<String>> {
         }
     }
     Ok(None)
+}
+
+fn stop_running_daemon(paths: &AppPaths, config: &AppConfig) -> Result<()> {
+    if let Some(issue) = terminate_running_service(paths)? {
+        log_warn(
+            paths,
+            "helper-start",
+            &format!("停止旧服务时出现问题：{issue}"),
+        );
+    }
+    let _ = reconcile_running_state(paths, config);
+    let _ = state::clear_pid(paths);
+    thread::sleep(Duration::from_millis(300));
+    Ok(())
 }
 
 fn cleanup_hosts_state(paths: &AppPaths) -> (String, Option<String>) {
