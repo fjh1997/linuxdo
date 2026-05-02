@@ -43,7 +43,6 @@ application-folder-position = { x = 560, y = 220 }
 section = "utils"
 package-name = "linuxdo-accelerator"
 desktop-template = "packaging/linux/linuxdo-accelerator.desktop.hbs"
-maintainer-scripts = "packaging/linux/deb"
 depends = ["libgtk-3-0", "libxdo3"]
 
 [package.metadata.packager.nsis]
