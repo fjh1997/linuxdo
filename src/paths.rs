@@ -24,6 +24,7 @@ pub struct AppPaths {
 impl AppPaths {
     pub fn resolve(config_override: Option<PathBuf>) -> Result<Self> {
         let (default_config_dir, default_data_dir) = default_app_dirs()?;
+        let default_config_path = default_config_dir.join("linuxdo-accelerator.toml");
         let has_config_override = config_override.is_some();
         let config_path =
             config_override.unwrap_or_else(|| default_config_dir.join("linuxdo-accelerator.toml"));
@@ -32,7 +33,8 @@ impl AppPaths {
             .map(Path::to_path_buf)
             .ok_or_else(|| anyhow!("invalid config path {}", config_path.display()))?;
 
-        let data_dir = if has_config_override {
+        let is_explicit_override = has_config_override && config_path != default_config_path;
+        let data_dir = if is_explicit_override {
             if config_dir
                 .file_name()
                 .and_then(|name| name.to_str())
