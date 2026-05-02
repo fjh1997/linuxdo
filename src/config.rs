@@ -167,7 +167,7 @@ fn marker_matches_current_version(marker_path: &Path) -> bool {
 }
 
 impl AppConfig {
-    pub fn migrate_config_if_needed(path: &Path, cert_dir: &Path) -> Result<bool> {
+    pub fn migrate_config_if_needed(path: &Path) -> Result<bool> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create {}", parent.display()))?;
@@ -189,7 +189,6 @@ impl AppConfig {
         fs::write(path, DEFAULT_APP_CONFIG)
             .with_context(|| format!("failed to write config {}", path.display()))?;
         write_version_marker(&marker_path)?;
-        crate::certs::clear_server_certs(cert_dir);
         cleanup_legacy_network_profile(path)?;
         Ok(true)
     }

@@ -35,7 +35,7 @@ pub fn resolve_paths(config_override: Option<PathBuf>) -> Result<AppPaths> {
 
 pub fn init_config(config_path: Option<PathBuf>) -> Result<PathBuf> {
     let paths = resolve_paths(config_path)?;
-    let _ = AppConfig::migrate_config_if_needed(&paths.config_path, &paths.cert_dir)?;
+    let _ = AppConfig::migrate_config_if_needed(&paths.config_path)?;
     let _ = AppConfig::load_or_create(&paths.config_path)?;
     Ok(paths.config_path)
 }
@@ -44,7 +44,7 @@ pub fn setup(config_path: Option<PathBuf>) -> Result<()> {
     let paths = resolve_paths(config_path)?;
     log_info(&paths, "setup", "开始准备系统加速环境");
     let result = (|| -> Result<()> {
-        let _ = AppConfig::migrate_config_if_needed(&paths.config_path, &paths.cert_dir)?;
+        let _ = AppConfig::migrate_config_if_needed(&paths.config_path)?;
         let config = AppConfig::load_or_create(&paths.config_path)?;
         ensure_elevated(&config, true)?;
         ensure_loopback_alias(&config)?;
@@ -66,7 +66,7 @@ pub fn prepare_certificate(config_path: Option<PathBuf>) -> Result<()> {
     let paths = resolve_paths(config_path)?;
     log_info(&paths, "prepare-cert", "开始准备根证书");
     let result = (|| -> Result<()> {
-        let _ = AppConfig::migrate_config_if_needed(&paths.config_path, &paths.cert_dir)?;
+        let _ = AppConfig::migrate_config_if_needed(&paths.config_path)?;
         let config = AppConfig::load_or_create(&paths.config_path)?;
         let bundle = ensure_bundle(&config, &paths.cert_dir)?;
         install_ca(&bundle.ca_cert_path, &config.ca_common_name)?;
@@ -90,7 +90,7 @@ pub async fn run_foreground(config_path: Option<PathBuf>, with_setup: bool) -> R
             "守护进程启动：直接进入前台代理"
         },
     );
-    let _ = AppConfig::migrate_config_if_needed(&paths.config_path, &paths.cert_dir)?;
+    let _ = AppConfig::migrate_config_if_needed(&paths.config_path)?;
     let config = AppConfig::load_or_create(&paths.config_path)?;
     ensure_elevated(&config, with_setup)?;
     ensure_loopback_alias(&config)?;
@@ -139,7 +139,7 @@ pub async fn run_foreground(config_path: Option<PathBuf>, with_setup: bool) -> R
 pub fn helper_start(config_path: Option<PathBuf>) -> Result<()> {
     let paths = resolve_paths(config_path)?;
     log_info(&paths, "helper-start", "收到启动请求，开始准备加速环境");
-    let _ = AppConfig::migrate_config_if_needed(&paths.config_path, &paths.cert_dir)?;
+    let _ = AppConfig::migrate_config_if_needed(&paths.config_path)?;
     let config = AppConfig::load_or_create(&paths.config_path)?;
     let start_result = (|| -> Result<()> {
         ensure_elevated(&config, true)?;

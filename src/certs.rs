@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow};
 use rcgen::{
     BasicConstraints, Certificate, CertificateParams, DistinguishedName, DnType,
-    ExtendedKeyUsagePurpose, IsCa, KeyUsagePurpose,
+    ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose,
 };
 use time::{Duration, OffsetDateTime};
 
@@ -23,30 +23,14 @@ const CA_VALIDITY_DAYS: i64 = 365;
 const SERVER_VALIDITY_DAYS: i64 = 365;
 
 pub fn ensure_bundle(config: &AppConfig, root: &Path) -> Result<CertificateBundle> {
-    generate_bundle(config, root, false)
-}
-
-pub fn clear_server_certs(root: &Path) {
-    for name in [
-        "linuxdo-accelerator-server.crt",
-        "linuxdo-accelerator-server.key",
-    ] {
-        let path = root.join(name);
-        if path.exists() {
-            let _ = fs::remove_file(&path);
-        }
-    }
+    generate_bundle(config, root)
 }
 
 pub fn load_or_create_bundle(config: &AppConfig, root: &Path) -> Result<CertificateBundle> {
-    generate_bundle(config, root, false)
+    generate_bundle(config, root)
 }
 
-fn generate_bundle(
-    config: &AppConfig,
-    root: &Path,
-    force_regenerate: bool,
-) -> Result<CertificateBundle> {
+fn generate_bundle(config: &AppConfig, root: &Path) -> Result<CertificateBundle> {
     let cert_dir = root.to_path_buf();
     fs::create_dir_all(&cert_dir)
         .with_context(|| format!("failed to create {}", cert_dir.display()))?;
@@ -57,15 +41,30 @@ fn generate_bundle(
         server_key_path: cert_dir.join("linuxdo-accelerator-server.key"),
     };
 
-    if !force_regenerate
-        && bundle.ca_cert_path.exists()
-        && bundle.server_cert_path.exists()
-        && bundle.server_key_path.exists()
-    {
-        return Ok(bundle);
-    }
+    let ca_key_path = cert_dir.join("linuxdo-accelerator-root-ca.key");
+    let ca_cert = load_or_generate_ca(config, &bundle, &ca_key_path)?;
 
-    remove_existing_bundle(&bundle)?;
+    remove_server_cert_files(&bundle)?;
+    generate_server_cert(config, &bundle, &ca_cert)?;
+
+    Ok(bundle)
+}
+
+fn load_or_generate_ca(
+    config: &AppConfig,
+    bundle: &CertificateBundle,
+    ca_key_path: &Path,
+) -> Result<Certificate> {
+    if bundle.ca_cert_path.exists() && ca_key_path.exists() {
+        let ca_pem = fs::read_to_string(&bundle.ca_cert_path)
+            .with_context(|| format!("failed to read {}", bundle.ca_cert_path.display()))?;
+        let ca_key_pem = fs::read_to_string(ca_key_path)
+            .with_context(|| format!("failed to read {}", ca_key_path.display()))?;
+        let key_pair = KeyPair::from_pem(&ca_key_pem).context("failed to parse CA key pair")?;
+        let ca_params = CertificateParams::from_ca_cert_pem(&ca_pem, key_pair)
+            .context("failed to parse existing root CA certificate")?;
+        return Certificate::from_params(ca_params).context("failed to load root CA");
+    }
 
     let (ca_not_before, ca_not_after) = validity_window(CA_VALIDITY_DAYS)?;
     let mut ca_params = CertificateParams::default();
@@ -85,6 +84,26 @@ fn generate_bundle(
 
     let ca_cert = Certificate::from_params(ca_params).context("failed to generate root CA")?;
 
+    fs::write(
+        &bundle.ca_cert_path,
+        ca_cert
+            .serialize_pem()
+            .context("failed to serialize root CA")?,
+    )
+    .with_context(|| format!("failed to write {}", bundle.ca_cert_path.display()))?;
+    fs::write(ca_key_path, ca_cert.serialize_private_key_pem())
+        .with_context(|| format!("failed to write {}", ca_key_path.display()))?;
+    sync_user_ownership(&bundle.ca_cert_path)?;
+    sync_user_ownership(ca_key_path)?;
+
+    Ok(ca_cert)
+}
+
+fn generate_server_cert(
+    config: &AppConfig,
+    bundle: &CertificateBundle,
+    ca_cert: &Certificate,
+) -> Result<()> {
     let (server_not_before, server_not_after) = validity_window(SERVER_VALIDITY_DAYS)?;
     let mut server_params = CertificateParams::new(config.certificate_domains.clone());
     server_params.alg = &rcgen::PKCS_ECDSA_P256_SHA256;
@@ -103,16 +122,9 @@ fn generate_bundle(
         Certificate::from_params(server_params).context("failed to generate server cert")?;
 
     fs::write(
-        &bundle.ca_cert_path,
-        ca_cert
-            .serialize_pem()
-            .context("failed to serialize root CA")?,
-    )
-    .with_context(|| format!("failed to write {}", bundle.ca_cert_path.display()))?;
-    fs::write(
         &bundle.server_cert_path,
         server_cert
-            .serialize_pem_with_signer(&ca_cert)
+            .serialize_pem_with_signer(ca_cert)
             .context("failed to sign server cert")?,
     )
     .with_context(|| format!("failed to write {}", bundle.server_cert_path.display()))?;
@@ -121,25 +133,14 @@ fn generate_bundle(
         server_cert.serialize_private_key_pem(),
     )
     .with_context(|| format!("failed to write {}", bundle.server_key_path.display()))?;
-    sync_user_ownership(&bundle.ca_cert_path)?;
     sync_user_ownership(&bundle.server_cert_path)?;
     sync_user_ownership(&bundle.server_key_path)?;
 
-    Ok(bundle)
+    Ok(())
 }
 
-fn remove_existing_bundle(bundle: &CertificateBundle) -> Result<()> {
-    let legacy_version_path = bundle
-        .ca_cert_path
-        .parent()
-        .unwrap_or(Path::new(""))
-        .join("schema-version");
-    for path in [
-        &bundle.ca_cert_path,
-        &bundle.server_cert_path,
-        &bundle.server_key_path,
-        &legacy_version_path,
-    ] {
+fn remove_server_cert_files(bundle: &CertificateBundle) -> Result<()> {
+    for path in [&bundle.server_cert_path, &bundle.server_key_path] {
         match fs::remove_file(path) {
             Ok(_) => {}
             Err(error) if error.kind() == ErrorKind::NotFound => {}
@@ -148,7 +149,6 @@ fn remove_existing_bundle(bundle: &CertificateBundle) -> Result<()> {
             }
         }
     }
-
     Ok(())
 }
 

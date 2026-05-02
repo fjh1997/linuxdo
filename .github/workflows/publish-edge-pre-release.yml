@@ -68,7 +68,7 @@ jobs:
           )
           build_serial="$(( GITHUB_RUN_NUMBER % 10000 ))"
           short_sha="${GITHUB_SHA::12}"
-          edge_version="${base_version}-edge.${GITHUB_RUN_NUMBER}.${short_sha}"
+          edge_version="${base_version}-${short_sha}"
           RELEASE_VERSION="${edge_version}" \
           ANDROID_VERSION_SERIAL="${build_serial}" \
           "$PYTHON_BIN" ./scripts/ci-sync-version.py
@@ -173,7 +173,7 @@ jobs:
           )
           build_serial="$(( GITHUB_RUN_NUMBER % 10000 ))"
           short_sha="${GITHUB_SHA::12}"
-          edge_version="${base_version}-edge.${GITHUB_RUN_NUMBER}.${short_sha}"
+          edge_version="${base_version}-${short_sha}"
           RELEASE_VERSION="${edge_version}" \
           ANDROID_VERSION_SERIAL="${build_serial}" \
           "$PYTHON_BIN" ./scripts/ci-sync-version.py
