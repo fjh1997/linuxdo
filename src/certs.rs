@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow};
 use rcgen::{
     BasicConstraints, Certificate, CertificateParams, DistinguishedName, DnType,
-    ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose,
+    ExtendedKeyUsagePurpose, IsCa, KeyUsagePurpose,
 };
 use time::{Duration, OffsetDateTime};
 
@@ -41,31 +41,15 @@ fn generate_bundle(config: &AppConfig, root: &Path) -> Result<CertificateBundle>
         server_key_path: cert_dir.join("linuxdo-accelerator-server.key"),
     };
 
-    let ca_key_path = cert_dir.join("linuxdo-accelerator-root-ca.key");
-    let ca_cert = load_or_generate_ca(config, &bundle, &ca_key_path)?;
+    remove_existing_bundle_files(&bundle)?;
 
-    remove_server_cert_files(&bundle)?;
+    let ca_cert = generate_ca(config, &bundle)?;
     generate_server_cert(config, &bundle, &ca_cert)?;
 
     Ok(bundle)
 }
 
-fn load_or_generate_ca(
-    config: &AppConfig,
-    bundle: &CertificateBundle,
-    ca_key_path: &Path,
-) -> Result<Certificate> {
-    if bundle.ca_cert_path.exists() && ca_key_path.exists() {
-        let ca_pem = fs::read_to_string(&bundle.ca_cert_path)
-            .with_context(|| format!("failed to read {}", bundle.ca_cert_path.display()))?;
-        let ca_key_pem = fs::read_to_string(ca_key_path)
-            .with_context(|| format!("failed to read {}", ca_key_path.display()))?;
-        let key_pair = KeyPair::from_pem(&ca_key_pem).context("failed to parse CA key pair")?;
-        let ca_params = CertificateParams::from_ca_cert_pem(&ca_pem, key_pair)
-            .context("failed to parse existing root CA certificate")?;
-        return Certificate::from_params(ca_params).context("failed to load root CA");
-    }
-
+fn generate_ca(config: &AppConfig, bundle: &CertificateBundle) -> Result<Certificate> {
     let (ca_not_before, ca_not_after) = validity_window(CA_VALIDITY_DAYS)?;
     let mut ca_params = CertificateParams::default();
     ca_params.alg = &rcgen::PKCS_ECDSA_P256_SHA256;
@@ -91,10 +75,7 @@ fn load_or_generate_ca(
             .context("failed to serialize root CA")?,
     )
     .with_context(|| format!("failed to write {}", bundle.ca_cert_path.display()))?;
-    fs::write(ca_key_path, ca_cert.serialize_private_key_pem())
-        .with_context(|| format!("failed to write {}", ca_key_path.display()))?;
     sync_user_ownership(&bundle.ca_cert_path)?;
-    sync_user_ownership(ca_key_path)?;
 
     Ok(ca_cert)
 }
@@ -139,8 +120,12 @@ fn generate_server_cert(
     Ok(())
 }
 
-fn remove_server_cert_files(bundle: &CertificateBundle) -> Result<()> {
-    for path in [&bundle.server_cert_path, &bundle.server_key_path] {
+fn remove_existing_bundle_files(bundle: &CertificateBundle) -> Result<()> {
+    for path in [
+        &bundle.ca_cert_path,
+        &bundle.server_cert_path,
+        &bundle.server_key_path,
+    ] {
         match fs::remove_file(path) {
             Ok(_) => {}
             Err(error) if error.kind() == ErrorKind::NotFound => {}
